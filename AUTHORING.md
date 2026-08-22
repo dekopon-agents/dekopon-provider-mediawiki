@@ -95,7 +95,7 @@ The earlier hash above is retained as the chronological pre-review baseline and 
 
 ## Release record
 
-Not released. Do not fill this section from planned workflow behavior; append observed tag, workflow, attestation, release checksum, and OCI digest only after publication.
+The first annotated `v0.1.0` push reached release run `32562529644` and failed before building because checkout had dereferenced the tag locally; the object-type gate therefore mistook it for a lightweight tag. Main CI `32562300310` had passed. After confirming there was no release or draft, the unpublished tag was deleted locally/remotely. The workflow now explicitly fetches the tag ref before requiring object type `tag`. Final release, attestation, asset, and OCI evidence remains to be appended only after observation.
 
 ## Reusable checklist
 

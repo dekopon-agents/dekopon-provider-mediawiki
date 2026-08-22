@@ -67,6 +67,12 @@ The Rust/security and product/release reviews found no fifth/sixth-tool or secre
 
 The cursor remains forgeable/replayable by the already documented no-key/no-clock design; depth is a context bound, not an authorization boundary. The repaired tree passed 40 tests, native/Wasm Clippy, MSRV and release checks, `actionlint`, `shellcheck`, and `zizmor` (no findings). Two independent ordinary-target builds produced 817,527-byte components with SHA-256 `3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`. End-to-end broker smoke and real GitHub release evidence remained pending at this repair checkpoint and are recorded below only after observation.
 
+## First tag attempt and focused correction
+
+Main CI run [`32562300310`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32562300310) passed both `check` and `Reproducible component`. The first annotated `v0.1.0` push then failed in release run [`32562529644`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32562529644) before any build, draft, asset, attestation, or package side effect. `actions/checkout` had resolved the tag to its commit, so `git cat-file -t refs/tags/v0.1.0` observed a commit and incorrectly rejected the genuinely annotated remote tag.
+
+After confirming that no GitHub Release existed, the unpublished failed tag was deleted locally and remotely. The focused fix explicitly fetches `refs/tags/$tag:refs/tags/$tag` with force before checking the object type. This preserves the annotated-tag gate instead of weakening it. The corrected commit must pass main CI before `v0.1.0` is recreated.
+
 ## Friction and fixes
 
 - The sister provider was on SDK `0.9.0`; reading the published `0.10.0` crates and tagged core source avoided copying a stale dependency/command precedent.

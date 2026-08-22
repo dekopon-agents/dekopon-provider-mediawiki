@@ -44,6 +44,9 @@ jobs:
             echo "error: release tag must be strict v<major>.<minor>.<patch> SemVer" >&2
             exit 1
           fi
+          # checkout resolves a tag to its commit; fetch the tag ref itself before checking its
+          # object type so an annotated remote tag is not mistaken for a lightweight local one.
+          git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
           if [[ "$(git cat-file -t "refs/tags/$tag")" != tag ]]; then
             echo "error: $tag must be an annotated tag" >&2
             exit 1
