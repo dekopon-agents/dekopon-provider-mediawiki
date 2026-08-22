@@ -8,7 +8,7 @@ This document extracts provider-design lessons from the MediaWiki implementation
 - **Use the current component contract.** The provider includes `dekopon:provider/provider@0.2.0`, imports only `dekopon:http/client@1.0.0`, and uses `export_provider_with_bindings!`. HTTP providers must be exercised through `dekopon-brokerd`; the import-free direct runner is intentionally the wrong host.
 - **Treat schemas as prompt metadata, not enforcement.** Every request is separately deserialized with `deny_unknown_fields`, then checked for semantic, scalar-count, UTF-8-byte, and allowlist bounds before the first host call.
 - **Make destination choice non-input.** A reviewed SiteMatrix snapshot supplies language labels. The implementation constructs HTTPS/443 Wikipedia Action API origins and accepts no URL, host, scheme, port, project, IP, credential, environment variable, or runtime configuration.
-- **Pin page identity when a read needs two calls.** `wikipedia_section` resolves title, heading, page ID, and revision first, then asks for one section by `oldid`. A moving page cannot mix old metadata with new content.
+- **Pin page identity and namespace before parsing.** `wikipedia_outline` first resolves a main-namespace page and revision with `action=query`, then parses sections by `oldid`. `wikipedia_section` adds one final `oldid`/index fetch. The two- and three-call sequences prevent namespace bypass and revision races.
 - **Budget serialized data, not characters alone.** Four-byte Unicode and JSON escaping make character limits insufficient. Field caps feed a 14,000-byte projected-output check and an actual 16,384-byte SDK-envelope check.
 
 ## SDK, WIT, and HTTP lessons
@@ -50,7 +50,22 @@ shellcheck build.sh scripts/validate.sh
 ./scripts/validate.sh
 ```
 
-`scripts/validate.sh` is the shared local/CI/release gate. CI adds independent-checkout reproducibility, dependency bans, mirrored-WIT equality, component import/export inspection, path scans, and artifact upload. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. These are implemented checks, not a claim that a release has run.
+`scripts/validate.sh` is the shared local/CI/release gate. CI adds independent-checkout reproducibility, dependency bans, mirrored-WIT equality, component import/export inspection, path scans, and artifact upload. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates or strictly reuses a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. Build, attestation, draft, GHCR, and finalization are separate artifact-linked jobs with only their required permissions. These are implemented checks, not a claim that a release has run.
+
+## Bounded review and repair — 2026-08-22
+
+The Rust/security and product/release reviews found no fifth/sixth-tool or secret-surface problem, but identified one high implementation risk, one high workflow risk, and several bounded correctness gaps. Every reported code/workflow item was repaired before repository creation:
+
+- Replaced recursive DOM walking with iterative enter/exit frames. A complete preflight traversal rejects more than 50,000 nodes or depth above 256 as `response_too_large`, so hostile markup cannot turn guest stack exhaustion into a Wasm trap.
+- Added bounded formula projection: prefer `application/x-tex` annotation text, then MediaWiki math fallback `alt`; never fetch `src`. Missing formula text emits `[formula omitted]`, and omission/shortening propagates `truncated` where supported.
+- Closed the outline/section namespace bypass. Both resolve with `action=query&prop=info`, require `ns == 0`, and pin `lastrevid`; outline then parses that `oldid`, and section fetches the chosen index from the same revision. Broker request budgets became two for outline and three for section. Missing/deleted pages now remain `not_found`, not `no_such_section`.
+- Changed depth-cap pagination from ambiguous exhaustion to explicit `pagination_capped`. A null cursor plus `true` means upstream had more data but depth ten stopped traversal.
+- Lowered links from 50/default 25 to a worst-case-safe maximum/default 20. A unit test uses twenty distinct 255-byte maximally escaped titles, a 255-byte maximally escaped page title, and a full 2 KiB cursor: projected JSON is exactly 13,074 bytes and the SDK envelope 13,107, below their 14,000/16,384-byte ceilings.
+- Split the tag workflow into read-only build, attestation-only, contents-write draft, packages-write GHCR, and contents-write finalization jobs. Artifact downloads are checksum-verified, action references use commit SHAs (including peeled attestation commit `e8998f…`), and every `wasm-tools` install runs under Rust 1.97 explicitly.
+- Made release reruns recoverable: a matching existing draft is downloaded and byte-compared before reuse; only a draft newly created by the failing draft job is cleaned up. A later GHCR failure intentionally leaves a verified reusable draft.
+- Expanded README examples with response fragments, `sections[].index` mapping, and second-page calls that retain the original parameters.
+
+The cursor remains forgeable/replayable by the already documented no-key/no-clock design; depth is a context bound, not an authorization boundary. The repaired tree passed 40 tests, native/Wasm Clippy, MSRV and release checks, `actionlint`, `shellcheck`, and `zizmor` (no findings). Two independent ordinary-target builds produced 817,527-byte components with SHA-256 `3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`. End-to-end broker smoke and real GitHub release evidence remained pending at this repair checkpoint and are recorded below only after observation.
 
 ## Friction and fixes
 

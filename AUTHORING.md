@@ -24,7 +24,7 @@ curl 'https://meta.wikimedia.org/w/api.php?action=sitematrix&format=json&formatv
 - Strict `serde(deny_unknown_fields)` request types repeat every model-facing schema bound in native code.
 - The guest constructs only `https://<allowlisted-language>.wikipedia.org/w/api.php` GET requests with a form encoder, constant headers, no credentials, and no endpoint override.
 - Search and links consume one upstream page per invocation. Their cursors are versioned base64url envelopes containing only allowlisted continuation fields, a request fingerprint, tool kind, and bounded depth. They are intentionally not described as authenticated or expiring because the ABI provides no host key or clock.
-- Section reads first resolve the requested index and revision with `action=parse`, then fetch that exact section by `oldid` and index. This costs exactly two sequential calls and prevents a revision race.
+- The initial section design resolved the requested index/revision with `action=parse`, then fetched that exact section by `oldid` and index. Review later added a preceding main-namespace `action=query` resolution: outline now costs two calls and section three, preserving the revision pin while closing namespace bypass.
 - HTML is parsed into a DOM; executable/resource/navigation/edit/reference nodes are skipped and text is projected with block boundaries. No content URL is fetched.
 - Upstream bodies stop at 1 MiB, projected outputs stop below 14,000 bytes, and the complete SDK success envelope is measured against 16,384 bytes.
 - The deterministic component build retains the proven metadata normalization and path remapping, but never sets `CARGO_TARGET_DIR`; independent checkouts provide independent default Cargo targets for reproducibility checks.
@@ -44,9 +44,9 @@ Observed friction and fixes:
 - The first validation script assumed the stripped core module retained `wit-bindgen-rust` producer metadata. The encoded component does retain it, while the authoritative core evidence is its exact single import. The gate now checks component producer metadata and independently inspects core imports.
 - The proven sister harness redirected a second build with `CARGO_TARGET_DIR`, which is prohibited on this machine. Reproducibility instead used an independent source copy with its own ordinary default `target/`; the temporary copy was removed after byte comparison, without `cargo clean`.
 
-## Validation record
+## Validation record — pre-review baseline
 
-The final shared gate ran successfully:
+The pre-review shared gate ran successfully:
 
 ```console
 cargo +1.89.0 check --locked --all-targets --package dekopon-mediawiki-provider
@@ -76,7 +76,22 @@ A second source copy, excluding `.git`, `target/`, and generated artifacts, ran 
 
 No broker smoke was run in this phase: HTTP execution requires an operator-configured `dekopon-brokerd`, and creating/deploying that configuration was outside the no-remote/no-publish build task. The exact English/German, `ada_lovelace`, `NYC`, `Mercury`, missing-title, outline→section, and two-page links checklist remains explicit in `README.md` for post-review execution.
 
-No GitHub repository, remote, pull request, release, tag, package, attestation, or OCI artifact has been created by this build phase.
+No GitHub repository, remote, pull request, release, tag, package, attestation, or OCI artifact had been created by this build phase.
+
+## 2026-08-22 — bounded review repair
+
+Two bounded reviews identified recursive DOM depth, outline namespace scope, ambiguous pagination capping, formula omission, a worst-case links budget, missing-page guidance, and release-workflow privilege/recovery issues. The implementation now uses iterative DOM frames plus 50,000-node/256-depth rejection, bounded TeX/alt formula projection, a main-namespace query and revision pin before outline parsing, explicit `pagination_capped`, a proven maximum of 20 links, and `not_found` during section page resolution. Outline now requires two broker HTTP calls and section three.
+
+Release automation was split into artifact-linked jobs with scoped permissions. Every transfer rechecks the checksum; the attestation action uses the peeled reviewed commit; `wasm-tools` installation explicitly uses Rust 1.97; and an existing exact draft can be reused after a later-job failure. README examples now map `sections[].index` to `section_index` and show second-page cursor calls.
+
+Post-repair validation passed 40 tests plus the complete shared gate, `actionlint`, `shellcheck`, and `zizmor` with no findings. An independent ordinary-target rebuild matched both files exactly:
+
+- artifact size: `817527` bytes;
+- SHA-256: `3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`;
+- worst-case 20-link projection/envelope: `13074` / `13107` bytes;
+- component interface remained one `dekopon:http/client@1.0.0` import and exactly `describe`/`invoke` exports.
+
+The earlier hash above is retained as the chronological pre-review baseline and is not the release candidate.
 
 ## Release record
 

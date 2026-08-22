@@ -14,9 +14,9 @@ There is no generic API/URL tool, whole-article dump, HTML, wikitext, references
 
 ## Context safety
 
-Inputs and outputs are bounded in native code, not only JSON Schema. Search returns at most 10 results; leads at most 1,200 characters; outlines at most 60 entries; one section at most 8,000 characters; and links at most 50 entries from one API page. Snippets and HTML-derived text are DOM-decoded plaintext. Upstream bodies stop at 1 MiB, projected JSON stays below 14,000 bytes, and the measured SDK envelope stays at or below 16,384 bytes, including four-byte Unicode and JSON escaping.
+Inputs and outputs are bounded in native code, not only JSON Schema. Search returns at most 10 results; leads at most 1,200 characters; outlines at most 60 entries; one section at most 8,000 characters; and links at most 20 entries from one API page. The 20-link cap is proven against 255-byte fully JSON-escaped titles plus a full 2 KiB cursor. Snippets and HTML-derived text are DOM-decoded plaintext with iterative node/depth limits. Math is projected from bounded TeX or formula alt text without fetching resources; an unavailable formula becomes `[formula omitted]` and marks truncation where the output supports it. Upstream bodies stop at 1 MiB, projected JSON stays below 14,000 bytes, and the measured SDK envelope stays at or below 16,384 bytes, including four-byte Unicode and JSON escaping.
 
-Pagination performs one API page per invocation and never drains continuation automatically. Opaque cursors are request-bound, at most 2 KiB, and stop after ten continuation depths. They are deliberately **not** claimed to be authenticated or expiring: the current guest ABI supplies no host key or clock.
+Pagination performs one API page per invocation and never drains continuation automatically. Opaque cursors are request-bound, at most 2 KiB, and stop after ten continuation depths. `pagination_capped: true` with `next_cursor: null` means Wikipedia still advertised another page but the provider depth cap stopped traversal; `false` with a null cursor means natural exhaustion. Cursors are deliberately **not** claimed to be authenticated or expiring: the current guest ABI supplies no host key or clock.
 
 The component makes zero automatic retries. It returns compact actionable errors such as `invalid_language`, `invalid_cursor`, `not_found`, `no_such_section`, `rate_limited`, `maxlag`, `timeout`, and `response_too_large` without response bodies or transport details.
 
@@ -26,13 +26,20 @@ From a Dekopon shell session, follow the guided surface rather than requesting a
 
 ```sh
 cap wikipedia_search '{"query":"Ada Lovelace","language":"en","limit":3}'
+# {"results":[{"title":"Ada Lovelace",...}],"next_cursor":"CURSOR", "pagination_capped":false}
+cap wikipedia_search '{"query":"Ada Lovelace","language":"en","limit":3,"cursor":"CURSOR"}'
+
 cap wikipedia_page '{"title":"Ada Lovelace","language":"en","max_chars":900}'
 cap wikipedia_outline '{"title":"Ada Lovelace","language":"en","max_sections":20}'
+# {"sections":[{"index":"1","title":"Biography",...}],...}
 cap wikipedia_section '{"title":"Ada Lovelace","section_index":"1","language":"en","max_chars":3000}'
-cap wikipedia_links '{"title":"Ada Lovelace","language":"en","limit":25}'
+
+cap wikipedia_links '{"title":"Ada Lovelace","language":"en","limit":20}'
+# {"links":[...],"next_cursor":"LINK_CURSOR","pagination_capped":false}
+cap wikipedia_links '{"title":"Ada Lovelace","language":"en","limit":20,"cursor":"LINK_CURSOR"}'
 ```
 
-Copy `next_cursor` unchanged into the same search or links request to fetch one more page. Copy `section_index` only from a fresh outline. `language` defaults to `en` and is checked against a dated, checked-in list of active Wikipedia editions.
+Keep query/title, language, and limit identical when copying `next_cursor` into the next search or links call. Copy one `sections[].index` value from a fresh outline into `section_index`. `language` defaults to `en` and is checked against a dated, checked-in list of active Wikipedia editions.
 
 ## Install and broker configuration
 
@@ -71,7 +78,16 @@ constraintSets:
     effect: read-only
     risk: Low
     idempotency: idempotent
-    constraints: *wikipediaOneRequest
+    constraints:
+      timeoutMs: 10000
+      maxOutputBytes: 16384
+      http:
+        allowedHosts: [en.wikipedia.org]
+        allowedMethods: [GET]
+        maxRequests: 2
+        maxRequestBytes: 16384
+        maxResponseBytes: 1048576
+        allowPlaintextLoopback: false
   wikipedia_links:
     provider: mediawiki
     effect: read-only
@@ -89,7 +105,7 @@ constraintSets:
       http:
         allowedHosts: [en.wikipedia.org]
         allowedMethods: [GET]
-        maxRequests: 2
+        maxRequests: 3
         maxRequestBytes: 16384
         maxResponseBytes: 1048576
         allowPlaintextLoopback: false
@@ -107,7 +123,7 @@ The release toolchain and encoder are exact pins:
 rustup toolchain install 1.89.0 --profile minimal
 rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
 rustup target add wasm32-unknown-unknown --toolchain 1.97.0
-cargo install wasm-tools --version 1.236.1 --locked
+rustup run 1.97.0 cargo install wasm-tools --version 1.236.1 --locked
 cargo test --locked --package dekopon-mediawiki-provider
 ./scripts/validate.sh
 ./build.sh

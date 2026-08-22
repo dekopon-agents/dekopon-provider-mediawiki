@@ -66,7 +66,8 @@ pub(crate) fn search(
         {
             return Err(error::upstream_error());
         }
-        let snippet = budget::compact_plain_text(&html_text::to_plain_text(&result.snippet));
+        let rendered = render_html(&result.snippet)?;
+        let snippet = budget::compact_plain_text(&rendered.text);
         let (snippet, _) =
             budget::truncate_text(&snippet, MAX_SNIPPET_CHARACTERS, MAX_SNIPPET_BYTES);
         results.push(SearchResult {
@@ -78,7 +79,7 @@ pub(crate) fn search(
         });
     }
 
-    let next_cursor = cursor::encode_next(
+    let next_page = cursor::encode_next(
         response.continuation,
         ToolKind::Search,
         &input.language,
@@ -89,7 +90,8 @@ pub(crate) fn search(
     let mut output = SearchOutput {
         results,
         total_hits: query.searchinfo.totalhits,
-        next_cursor,
+        next_cursor: next_page.cursor,
+        pagination_capped: next_page.pagination_capped,
     };
     shrink_search_to_fit(&mut output)?;
     budget::finish(&output)
@@ -170,7 +172,7 @@ pub(crate) fn outline(
     input: OutlineInput,
     send: Send<'_>,
 ) -> Result<serde_json::Value, ProviderError> {
-    let parsed = fetch_outline(send, &input.language, &input.title, Operation::Outline)?;
+    let parsed = fetch_outline(send, &input.language, &input.title)?;
     let mut truncated = parsed.sections.len() > input.max_sections;
     let mut sections = Vec::with_capacity(parsed.sections.len().min(input.max_sections));
     for section in parsed.sections.into_iter().take(input.max_sections) {
@@ -196,13 +198,13 @@ pub(crate) fn section(
     input: SectionInput,
     send: Send<'_>,
 ) -> Result<serde_json::Value, ProviderError> {
-    let outline = fetch_outline(send, &input.language, &input.title, Operation::Section)?;
+    let outline = fetch_outline(send, &input.language, &input.title)?;
     let selected = outline
         .sections
         .into_iter()
         .find(|section| section.index == input.section_index)
         .ok_or_else(error::no_such_section)?;
-    let heading = decode_heading(&selected.line, Operation::Section)?;
+    let (heading, heading_truncated) = decode_heading(&selected.line, Operation::Section)?;
     validate_anchor(&selected.anchor, Operation::Section)?;
 
     let mut request = ApiRequest::new(&input.language, "parse");
@@ -223,9 +225,11 @@ pub(crate) fn section(
         return Err(error::parse_failed());
     }
 
-    let text = html_text::remove_repeated_heading(html_text::to_plain_text(&parsed.text), &heading);
-    let (text, truncated) =
+    let rendered = render_html(&parsed.text)?;
+    let text = html_text::remove_repeated_heading(rendered.text, &heading);
+    let (text, text_truncated) =
         budget::truncate_text(&text, input.max_chars, input.max_chars.saturating_mul(4));
+    let truncated = heading_truncated || rendered.truncated || text_truncated;
     let url = page_url(&input.language, &outline.title, Some(&selected.anchor));
     let mut output = SectionOutput {
         title: outline.title,
@@ -282,7 +286,7 @@ pub(crate) fn links(input: LinksInput, send: Send<'_>) -> Result<serde_json::Val
             title: upstream_title(link.title, Operation::Links)?,
         });
     }
-    let next_cursor = cursor::encode_next(
+    let next_page = cursor::encode_next(
         response.continuation,
         ToolKind::Links,
         &input.language,
@@ -294,33 +298,51 @@ pub(crate) fn links(input: LinksInput, send: Send<'_>) -> Result<serde_json::Val
         title,
         page_id,
         links,
-        next_cursor,
+        next_cursor: next_page.cursor,
+        pagination_capped: next_page.pagination_capped,
     })
 }
 
 fn fetch_outline(
     send: Send<'_>,
     language: &str,
-    title: &str,
-    operation: Operation,
+    requested_title: &str,
 ) -> Result<ResolvedOutline, ProviderError> {
-    let mut request = ApiRequest::new(language, "parse");
-    request
-        .pair("page", title)
+    // Resolve namespace and revision before parsing. This keeps outline/section inside the same
+    // main-namespace boundary as search, page, and links and pins the following parse call.
+    let mut resolve = ApiRequest::new(language, "query");
+    resolve
+        .pair("prop", "info")
         .pair("redirects", "1")
+        .pair("converttitles", "1")
+        .pair("titles", requested_title);
+    let body = execute(send, resolve.finish()?, Operation::Outline)?;
+    let response: ResolveResponse = decode(&body, Operation::Outline)?;
+    check_api_error(response.error.as_ref(), Operation::Outline, false)?;
+    let query = response.query.ok_or_else(error::parse_failed)?;
+    let page = one_page(query.pages, Operation::Outline)?;
+    if page.missing || page.ns != 0 {
+        return Err(error::not_found());
+    }
+    let page_id = positive(page.pageid, Operation::Outline)?;
+    let revision_id = positive(page.lastrevid, Operation::Outline)?;
+    let title = upstream_title(page.title, Operation::Outline)?;
+
+    let mut parse = ApiRequest::new(language, "parse");
+    parse
+        .pair("oldid", revision_id.to_string())
         .pair("prop", "sections|revid");
-    let body = execute(send, request.finish()?, operation)?;
-    let response: OutlineResponse = decode(&body, operation)?;
-    check_api_error(response.error.as_ref(), operation, false)?;
-    let parsed = response.parse.ok_or_else(|| error::malformed(operation))?;
-    let title = upstream_title(parsed.title, operation)?;
-    if parsed.pageid == 0 || parsed.revid == 0 {
-        return Err(error::malformed(operation));
+    let body = execute(send, parse.finish()?, Operation::Outline)?;
+    let response: OutlineResponse = decode(&body, Operation::Outline)?;
+    check_api_error(response.error.as_ref(), Operation::Outline, false)?;
+    let parsed = response.parse.ok_or_else(error::parse_failed)?;
+    if parsed.pageid != page_id || parsed.revid != revision_id || parsed.title != title {
+        return Err(error::parse_failed());
     }
     Ok(ResolvedOutline {
         title,
-        page_id: parsed.pageid,
-        revision_id: parsed.revid,
+        page_id,
+        revision_id,
         sections: parsed.sections,
     })
 }
@@ -428,6 +450,10 @@ fn decode<T: for<'de> Deserialize<'de>>(
     serde_json::from_slice(body).map_err(|_| error::malformed(operation))
 }
 
+fn render_html(fragment: &str) -> Result<html_text::PlainText, ProviderError> {
+    html_text::to_plain_text(fragment).map_err(|_| error::response_too_large())
+}
+
 fn check_api_error(
     failure: Option<&ApiFailure>,
     operation: Operation,
@@ -509,15 +535,16 @@ fn validate_anchor(anchor: &str, operation: Operation) -> Result<(), ProviderErr
     Ok(())
 }
 
-fn decode_heading(line: &str, operation: Operation) -> Result<String, ProviderError> {
-    let heading = budget::compact_plain_text(&html_text::to_plain_text(line));
+fn decode_heading(line: &str, operation: Operation) -> Result<(String, bool), ProviderError> {
+    let rendered = render_html(line)?;
+    let heading = budget::compact_plain_text(&rendered.text);
     if heading.is_empty()
         || heading.chars().count() > MAX_HEADING_CHARACTERS
         || heading.len() > MAX_HEADING_BYTES
     {
         return Err(error::malformed(operation));
     }
-    Ok(heading)
+    Ok((heading, rendered.truncated))
 }
 
 fn project_outline_section(
@@ -538,12 +565,14 @@ fn project_outline_section(
         .ok()
         .filter(|level| (1..=6).contains(level))
         .ok_or_else(|| error::malformed(operation))?;
-    let heading = budget::compact_plain_text(&html_text::to_plain_text(&section.line));
+    let rendered = render_html(&section.line)?;
+    let heading = budget::compact_plain_text(&rendered.text);
     if heading.is_empty() {
         return Err(error::malformed(operation));
     }
-    let (title, truncated) =
+    let (title, title_truncated) =
         budget::truncate_text(&heading, MAX_HEADING_CHARACTERS, MAX_HEADING_BYTES);
+    let truncated = rendered.truncated || title_truncated;
     Ok((
         OutlineSection {
             index: section.index,
@@ -728,6 +757,31 @@ struct RawPage {
 }
 
 #[derive(Debug, Deserialize)]
+struct ResolveResponse {
+    #[serde(default)]
+    error: Option<ApiFailure>,
+    #[serde(default)]
+    query: Option<ResolveQuery>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveQuery {
+    pages: Vec<RawResolvedPage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawResolvedPage {
+    #[serde(default)]
+    pageid: Option<u64>,
+    ns: i32,
+    title: String,
+    #[serde(default)]
+    missing: bool,
+    #[serde(default)]
+    lastrevid: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
 struct OutlineResponse {
     #[serde(default)]
     error: Option<ApiFailure>,
@@ -813,6 +867,7 @@ struct SearchOutput {
     results: Vec<SearchResult>,
     total_hits: u64,
     next_cursor: Option<String>,
+    pagination_capped: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -881,6 +936,7 @@ struct LinksOutput {
     page_id: u64,
     links: Vec<Link>,
     next_cursor: Option<String>,
+    pagination_capped: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -893,7 +949,13 @@ mod tests {
     use dekopon_provider_http::{HttpError, HttpErrorCode, Request, Response};
     use serde_json::{Value, json};
 
-    use crate::{invoke_with, testutil::capability};
+    use crate::{
+        cursor::{Continuation, ToolKind},
+        invoke_with,
+        testutil::capability,
+    };
+
+    use super::{Link, LinksOutput, render_html};
 
     fn fixture(name: &str) -> Vec<u8> {
         let text = match name {
@@ -905,6 +967,7 @@ mod tests {
                 include_str!("../tests/fixtures/page-disambiguation.json")
             }
             "page-missing" => include_str!("../tests/fixtures/page-missing.json"),
+            "outline-resolve" => include_str!("../tests/fixtures/outline-resolve.json"),
             "outline" => include_str!("../tests/fixtures/outline.json"),
             "section" => include_str!("../tests/fixtures/section.json"),
             "links-page-1" => include_str!("../tests/fixtures/links-page-1.json"),
@@ -953,6 +1016,7 @@ mod tests {
         )
         .expect("second search page succeeds");
         assert!(second["next_cursor"].is_null());
+        assert_eq!(second["pagination_capped"], false);
     }
 
     #[test]
@@ -965,7 +1029,12 @@ mod tests {
         .expect("empty search succeeds");
         assert_eq!(
             output,
-            json!({"results": [], "total_hits": 0, "next_cursor": null})
+            json!({
+                "results": [],
+                "total_hits": 0,
+                "next_cursor": null,
+                "pagination_capped": false
+            })
         );
     }
 
@@ -1027,16 +1096,75 @@ mod tests {
     }
 
     #[test]
-    fn outline_truncates_without_continuation() {
+    fn outline_resolves_main_namespace_then_parses_the_pinned_revision() {
+        let mut calls = 0;
         let output = invoke_with(
             &capability("wikipedia_outline"),
             json!({"title": "Ada Lovelace", "max_sections": 2}),
-            |_| response(fixture("outline")),
+            |request| {
+                calls += 1;
+                match calls {
+                    1 => {
+                        assert!(request.uri.contains("action=query"));
+                        assert!(request.uri.contains("prop=info"));
+                        assert!(request.uri.contains("titles=Ada+Lovelace"));
+                        response(fixture("outline-resolve"))
+                    }
+                    2 => {
+                        assert!(request.uri.contains("action=parse"));
+                        assert!(request.uri.contains("oldid=1370153024"));
+                        assert!(request.uri.contains("prop=sections%7Crevid"));
+                        response(fixture("outline"))
+                    }
+                    _ => panic!("unexpected request"),
+                }
+            },
         )
         .expect("outline succeeds");
+        assert_eq!(calls, 2);
         assert_eq!(output["sections"].as_array().expect("array").len(), 2);
         assert_eq!(output["sections"][0]["index"], "1");
         assert_eq!(output["truncated"], true);
+    }
+
+    #[test]
+    fn outline_rejects_non_main_namespace_and_missing_pages_before_parse() {
+        for (page, expected) in [
+            (
+                json!({
+                    "batchcomplete": true,
+                    "query": {"pages": [{
+                        "pageid": 123, "ns": 2, "title": "User:Example", "lastrevid": 456
+                    }]}
+                }),
+                "not_found",
+            ),
+            (
+                json!({"error": {"code": "missingtitle", "info": "not found"}}),
+                "not_found",
+            ),
+        ] {
+            let mut calls = 0;
+            let error = invoke_with(
+                &capability("wikipedia_outline"),
+                json!({"title": "User:Example"}),
+                |_| {
+                    calls += 1;
+                    response(serde_json::to_vec(&page).expect("fixture serializes"))
+                },
+            )
+            .expect_err("non-main or missing page fails");
+            assert_eq!(calls, 1);
+            assert_eq!(error.code(), expected);
+        }
+
+        let error = invoke_with(
+            &capability("wikipedia_section"),
+            json!({"title": "Deleted Page", "section_index": "1"}),
+            |_| response(br#"{"error":{"code":"missingtitle"}}"#.to_vec()),
+        )
+        .expect_err("missing section page fails during resolution");
+        assert_eq!(error.code(), "not_found");
     }
 
     #[test]
@@ -1050,12 +1178,17 @@ mod tests {
                 call += 1;
                 match call {
                     1 => {
+                        assert!(request.uri.contains("action=query"));
+                        assert!(request.uri.contains("prop=info"));
+                        response(fixture("outline-resolve"))
+                    }
+                    2 => {
                         assert!(request.uri.contains("action=parse"));
-                        assert!(request.uri.contains("page=Ada+Lovelace"));
+                        assert!(request.uri.contains("oldid=1370153024"));
                         assert!(request.uri.contains("prop=sections%7Crevid"));
                         response(fixture("outline"))
                     }
-                    2 => {
+                    3 => {
                         assert!(request.uri.contains("oldid=1370153024"));
                         assert!(request.uri.contains("section=1"));
                         assert!(request.uri.contains("prop=text%7Crevid"));
@@ -1066,7 +1199,7 @@ mod tests {
             },
         )
         .expect("section succeeds");
-        assert_eq!(call, 2);
+        assert_eq!(call, 3);
         assert_eq!(output["heading"], "Biography");
         assert!(
             !output["text"]
@@ -1086,11 +1219,15 @@ mod tests {
             json!({"title": "Ada Lovelace", "section_index": "999"}),
             |_| {
                 calls += 1;
-                response(fixture("outline"))
+                match calls {
+                    1 => response(fixture("outline-resolve")),
+                    2 => response(fixture("outline")),
+                    _ => panic!("unexpected request"),
+                }
             },
         )
         .expect_err("unknown outline index fails");
-        assert_eq!(calls, 1);
+        assert_eq!(calls, 2);
         assert_eq!(error.code(), "no_such_section");
         assert!(error.message().contains("wikipedia_outline"));
     }
@@ -1105,6 +1242,7 @@ mod tests {
         .expect("first page succeeds");
         let cursor = first["next_cursor"].as_str().expect("cursor").to_owned();
         assert_eq!(first["links"].as_array().expect("links").len(), 2);
+        assert_eq!(first["pagination_capped"], false);
 
         let _second = invoke_with(
             &capability("wikipedia_links"),
@@ -1129,6 +1267,72 @@ mod tests {
             },
         )
         .expect("second page succeeds");
+    }
+
+    #[test]
+    fn pagination_depth_cap_is_explicit_not_false_exhaustion() {
+        let continuation = Continuation {
+            generic: Some("-||".to_owned()),
+            sroffset: Some(2),
+            ..Continuation::default()
+        };
+        let mut cursor = None;
+        for depth in 0..10 {
+            cursor = crate::cursor::encode_next(
+                Some(continuation.clone()),
+                ToolKind::Search,
+                "en",
+                "Ada & café",
+                2,
+                depth,
+            )
+            .expect("cursor encodes")
+            .cursor;
+        }
+        let output = invoke_with(
+            &capability("wikipedia_search"),
+            json!({
+                "query": "Ada & café",
+                "language": "en",
+                "limit": 2,
+                "cursor": cursor.expect("depth-ten cursor")
+            }),
+            |_| response(fixture("search-page-1")),
+        )
+        .expect("capped page succeeds");
+        assert!(output["next_cursor"].is_null());
+        assert_eq!(output["pagination_capped"], true);
+    }
+
+    #[test]
+    fn twenty_links_fit_the_projection_with_worst_case_json_escaping_and_cursor() {
+        let escaped_title = "\\".repeat(255);
+        let output = LinksOutput {
+            title: escaped_title.clone(),
+            page_id: u64::MAX,
+            links: (0..20)
+                .map(|index| Link {
+                    title: format!("{index:02}{}", "\\".repeat(253)),
+                })
+                .collect(),
+            next_cursor: Some("x".repeat(2_048)),
+            pagination_capped: false,
+        };
+        let length = crate::budget::serialized_len(&output).expect("projection serializes");
+        assert_eq!(length, 13_074);
+        let value = crate::budget::finish(&output).expect("worst-case links fit the SDK envelope");
+        let envelope = dekopon_provider_sdk::ComponentResponse::Succeeded { output: value };
+        assert_eq!(
+            crate::budget::serialized_len(&envelope).expect("envelope serializes"),
+            13_107
+        );
+    }
+
+    #[test]
+    fn excessive_html_depth_maps_to_a_structured_provider_error() {
+        let fragment = format!("{}text{}", "<div>".repeat(300), "</div>".repeat(300));
+        let error = render_html(&fragment).expect_err("deep DOM is rejected");
+        assert_eq!(error.code(), "response_too_large");
     }
 
     #[test]

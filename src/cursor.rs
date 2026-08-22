@@ -45,6 +45,12 @@ pub(crate) struct CursorState {
     pub(crate) depth: u8,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct NextPage {
+    pub(crate) cursor: Option<String>,
+    pub(crate) pagination_capped: bool,
+}
+
 pub(crate) fn decode(
     encoded: &str,
     tool: ToolKind,
@@ -78,7 +84,7 @@ pub(crate) fn decode(
     })
 }
 
-/// Encodes the continuation for the next API page. At depth ten no further cursor is issued.
+/// Encodes the continuation for the next API page and distinguishes a depth cap from exhaustion.
 pub(crate) fn encode_next(
     continuation: Option<Continuation>,
     tool: ToolKind,
@@ -86,13 +92,19 @@ pub(crate) fn encode_next(
     subject: &str,
     limit: usize,
     current_depth: u8,
-) -> Result<Option<String>, ProviderError> {
+) -> Result<NextPage, ProviderError> {
     let Some(continuation) = continuation else {
-        return Ok(None);
+        return Ok(NextPage {
+            cursor: None,
+            pagination_capped: false,
+        });
     };
     validate_continuation(&continuation, tool).map_err(|_| error::upstream_error())?;
     if current_depth >= MAX_CURSOR_DEPTH {
-        return Ok(None);
+        return Ok(NextPage {
+            cursor: None,
+            pagination_capped: true,
+        });
     }
     let envelope = Envelope {
         version: CURSOR_VERSION,
@@ -106,7 +118,10 @@ pub(crate) fn encode_next(
     if encoded.len() > MAX_CURSOR_BYTES {
         return Err(error::response_too_large());
     }
-    Ok(Some(encoded))
+    Ok(NextPage {
+        cursor: Some(encoded),
+        pagination_capped: false,
+    })
 }
 
 fn validate_continuation(continuation: &Continuation, tool: ToolKind) -> Result<(), ProviderError> {
@@ -193,6 +208,7 @@ mod tests {
             0,
         )
         .expect("encodes")
+        .cursor
         .expect("cursor exists");
         let decoded = decode(&encoded, ToolKind::Search, "en", "Ada Lovelace", 5)
             .expect("matching request decodes");
@@ -220,6 +236,7 @@ mod tests {
             0,
         )
         .expect("encodes")
+        .cursor
         .expect("cursor exists");
         let bytes = URL_SAFE_NO_PAD.decode(&encoded).expect("base64");
         let mut value: Value = serde_json::from_slice(&bytes).expect("JSON");
@@ -246,6 +263,12 @@ mod tests {
             MAX_CURSOR_DEPTH,
         )
         .expect("depth cap is a successful terminal page");
-        assert!(next.is_none());
+        assert!(next.cursor.is_none());
+        assert!(next.pagination_capped);
+
+        let exhausted = encode_next(None, ToolKind::Search, "en", "Ada", 5, 0)
+            .expect("natural exhaustion succeeds");
+        assert!(exhausted.cursor.is_none());
+        assert!(!exhausted.pagination_capped);
     }
 }

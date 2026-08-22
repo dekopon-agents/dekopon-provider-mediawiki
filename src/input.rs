@@ -16,8 +16,10 @@ pub(crate) const DEFAULT_OUTLINE_SECTIONS: usize = 30;
 pub(crate) const MAX_OUTLINE_SECTIONS: usize = 60;
 pub(crate) const DEFAULT_SECTION_CHARS: usize = 3_000;
 pub(crate) const MAX_SECTION_CHARS: usize = 8_000;
-pub(crate) const DEFAULT_LINK_LIMIT: usize = 25;
-pub(crate) const MAX_LINK_LIMIT: usize = 50;
+// Twenty remains below the 14,000-byte projection budget even when every 255-byte title
+// consists entirely of JSON-escaped bytes and the cursor consumes its full 2 KiB allowance.
+pub(crate) const DEFAULT_LINK_LIMIT: usize = 20;
+pub(crate) const MAX_LINK_LIMIT: usize = 20;
 
 /// Active, public Wikipedia edition host labels from Wikimedia SiteMatrix on 2026-08-22.
 /// Source: `meta.wikimedia.org/w/api.php?action=sitematrix&format=json&formatversion=2`.
@@ -648,8 +650,8 @@ mod tests {
             }))
             .is_err()
         );
-        assert!(parse_links(json!({"title": "Ada", "limit": 50})).is_ok());
-        assert!(parse_links(json!({"title": "Ada", "limit": 51})).is_err());
+        assert!(parse_links(json!({"title": "Ada", "limit": 20})).is_ok());
+        assert!(parse_links(json!({"title": "Ada", "limit": 21})).is_err());
     }
 
     #[test]

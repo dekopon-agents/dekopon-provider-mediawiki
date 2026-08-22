@@ -6,10 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -23,9 +20,13 @@ env:
   ORAS_LINUX_AMD64_SHA256: "b4efc97a91f471f323f193ea4b4d63d8ff443ca3aab514151a30751330852827"
 
 jobs:
-  release:
-    name: release
+  build:
+    name: build and verify
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release-metadata.outputs.version }}
     steps:
       - name: Check out the immutable tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -69,7 +70,8 @@ jobs:
             --component clippy --component rustfmt
           rustup target add wasm32-unknown-unknown --toolchain "$PROVIDER_RUST_TOOLCHAIN"
           rustup override set "$PROVIDER_RUST_TOOLCHAIN"
-          cargo install wasm-tools --version "$WASM_TOOLS_VERSION" --locked
+          rustup run "$PROVIDER_RUST_TOOLCHAIN" cargo install wasm-tools \
+            --version "$WASM_TOOLS_VERSION" --locked
 
       - name: Run the shared shipping gates
         run: ./scripts/validate.sh
@@ -89,12 +91,82 @@ jobs:
           cmp mediawiki-provider.wasm rebuild/mediawiki-provider.wasm
           cmp mediawiki-provider.wasm.sha256 rebuild/mediawiki-provider.wasm.sha256
 
-      - name: Attest the component
-        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+      - name: Upload the verified release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          subject-path: mediawiki-provider.wasm
+          name: release-component
+          path: |
+            mediawiki-provider.wasm
+            mediawiki-provider.wasm.sha256
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Create a draft release with exactly two assets
+  attest:
+    name: attest component
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download verified component
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-component
+          path: dist
+      - name: Verify downloaded artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
+          (cd dist && sha256sum --check --strict mediawiki-provider.wasm.sha256)
+      - name: Attest the component
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/mediawiki-provider.wasm
+
+  draft:
+    name: create or verify draft release
+    needs: attest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified component
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-component
+          path: dist
+      - name: Verify downloaded artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
+          (cd dist && sha256sum --check --strict mediawiki-provider.wasm.sha256)
+      - name: Inspect existing release state
+        id: release-state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          error_file="$RUNNER_TEMP/release-inspect.err"
+          if draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq .draft 2>"$error_file"); then
+            if [[ "$draft" != true ]]; then
+              echo "error: an already-published release exists for $GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+            echo "mode=reuse" >>"$GITHUB_OUTPUT"
+          elif grep -q 'HTTP 404' "$error_file"; then
+            echo "mode=create" >>"$GITHUB_OUTPUT"
+          else
+            cat "$error_file" >&2
+            exit 1
+          fi
+      - name: Create draft release
+        if: steps.release-state.outputs.mode == 'create'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -105,19 +177,58 @@ jobs:
             --draft \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            mediawiki-provider.wasm mediawiki-provider.wasm.sha256
+            dist/mediawiki-provider.wasm dist/mediawiki-provider.wasm.sha256
+      - name: Verify exact draft assets and bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = true
           assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
             --jq '[.assets[].name] | sort | join("\n")')
           expected=$'mediawiki-provider.wasm\nmediawiki-provider.wasm.sha256'
           [[ "$assets" == "$expected" ]]
+          mkdir "$RUNNER_TEMP/release-assets"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/release-assets" \
+            --pattern mediawiki-provider.wasm \
+            --pattern mediawiki-provider.wasm.sha256
+          (cd "$RUNNER_TEMP/release-assets" && \
+            sha256sum --check --strict mediawiki-provider.wasm.sha256)
+          cmp dist/mediawiki-provider.wasm "$RUNNER_TEMP/release-assets/mediawiki-provider.wasm"
+          cmp dist/mediawiki-provider.wasm.sha256 \
+            "$RUNNER_TEMP/release-assets/mediawiki-provider.wasm.sha256"
+      - name: Remove only a newly created failed draft
+        if: failure() && steps.release-state.outputs.mode == 'create'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "$GITHUB_REF_NAME" --yes || true
 
+  ghcr:
+    name: publish identical GHCR artifact
+    needs: [build, draft]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download verified component
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-component
+          path: dist
+      - name: Verify downloaded artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
+          (cd dist && sha256sum --check --strict mediawiki-provider.wasm.sha256)
       - name: Authenticate to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Install pinned ORAS
         shell: bash
         run: |
@@ -129,18 +240,17 @@ jobs:
           echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
           install -m 0755 "$RUNNER_TEMP/oras" "$RUNNER_TEMP/bin-oras"
-
-      - name: Publish the identical component bytes to GHCR
+      - name: Publish and verify the identical component layer
         env:
-          VERSION: ${{ steps.release-metadata.outputs.version }}
+          VERSION: ${{ needs.build.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           ref="ghcr.io/dekopon-agents/provider-mediawiki:$VERSION"
           "$RUNNER_TEMP/bin-oras" push "$ref" \
             --artifact-type application/vnd.dekopon.provider.v1+wasm \
-            mediawiki-provider.wasm:application/wasm
-          expected="sha256:$(awk '{print $1}' mediawiki-provider.wasm.sha256)"
+            dist/mediawiki-provider.wasm:application/wasm
+          expected="sha256:$(awk '{print $1}' dist/mediawiki-provider.wasm.sha256)"
           "$RUNNER_TEMP/bin-oras" manifest fetch "$ref" >"$RUNNER_TEMP/manifest.json"
           jq -e --arg expected "$expected" '
             (.layers | length) == 1 and
@@ -148,6 +258,30 @@ jobs:
             (.layers[0].mediaType == "application/wasm")
           ' "$RUNNER_TEMP/manifest.json" >/dev/null
 
+  finalize:
+    name: finalize GitHub release
+    needs: [build, ghcr]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified component
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-component
+          path: dist
+      - name: Verify draft and exact assets before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum --check --strict mediawiki-provider.wasm.sha256)
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = true
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq '[.assets[].name] | sort | join("\n")')
+          expected=$'mediawiki-provider.wasm\nmediawiki-provider.wasm.sha256'
+          [[ "$assets" == "$expected" ]]
       - name: Finalize the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
