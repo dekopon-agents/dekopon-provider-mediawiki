@@ -1,0 +1,14 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [{
+      "pageid": 19045,
+      "ns": 0,
+      "title": "Mercury",
+      "lastrevid": 1369000000,
+      "description": "Wikimedia disambiguation page",
+      "extract": "Mercury most commonly refers to the planet, the chemical element, or the Roman god.",
+      "pageprops": {"disambiguation": "", "wikibase_item": "Q178"}
+    }]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "batchcomplete": true,
+  "continue": {"plcontinue": "974|0|A_Prince_of_Lovers", "continue": "||"},
+  "query": {
+    "normalized": [{"fromencoded": false, "from": "Ada_Lovelace", "to": "Ada Lovelace"}],
+    "pages": [{
+      "pageid": 974,
+      "ns": 0,
+      "title": "Ada Lovelace",
+      "links": [
+        {"ns": 0, "title": "A. E. Chalon"},
+        {"ns": 0, "title": "AMC (TV channel)"}
+      ]
+    }]
+  }
+}

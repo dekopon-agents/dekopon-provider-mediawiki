@@ -1,0 +1,25 @@
+{
+  "batchcomplete": true,
+  "continue": {"sroffset": 2, "continue": "-||"},
+  "query": {
+    "searchinfo": {"totalhits": 658},
+    "search": [
+      {
+        "ns": 0,
+        "title": "Ada Lovelace",
+        "pageid": 974,
+        "wordcount": 10102,
+        "snippet": "<span class=\"searchmatch\">Ada</span> <span class=\"searchmatch\">Lovelace</span> was a mathematician &amp; writer.",
+        "timestamp": "2026-08-19T11:48:44Z"
+      },
+      {
+        "ns": 0,
+        "title": "Ada Lovelace (microarchitecture)",
+        "pageid": 71803512,
+        "wordcount": 1843,
+        "snippet": "An Nvidia GPU microarchitecture.",
+        "timestamp": "2026-05-08T14:05:16Z"
+      }
+    ]
+  }
+}

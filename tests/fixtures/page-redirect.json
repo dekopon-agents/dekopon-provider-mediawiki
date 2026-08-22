@@ -1,0 +1,15 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "redirects": [{"from": "NYC", "to": "New York City"}],
+    "pages": [{
+      "pageid": 645042,
+      "ns": 0,
+      "title": "New York City",
+      "lastrevid": 1370287895,
+      "description": "Most populous city in the United States",
+      "extract": "New York City is the most populous city in the United States. It has five boroughs.",
+      "pageprops": {"wikibase_item": "Q60"}
+    }]
+  }
+}

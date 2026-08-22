@@ -1,0 +1,205 @@
+{
+  "apiVersion": "dekopon.dev/provider/v1alpha1",
+  "id": "mediawiki",
+  "description": "Five bounded read-only Wikipedia tools guiding search to a compact lead, outline, one section, and controlled links",
+  "capabilities": [
+    {
+      "id": "wikipedia_search",
+      "description": "Start here: find bounded Wikipedia page candidates, then pass one exact title to wikipedia_page for a compact overview",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Cursor returned by the preceding identical wikipedia_search request; do not edit it.",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "description": "Active Wikipedia edition code from the provider's checked-in allowlist; defaults to en (for example: de, fr, simple, zh-min-nan).",
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9-]{0,15}$",
+            "type": "string"
+          },
+          "limit": {
+            "default": 5,
+            "description": "Maximum candidates from one API page.",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search phrase. Controls and insource: are rejected; no raw query passthrough.",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "wikipedia_page",
+      "description": "After search, read one compact canonical lead and identity; use wikipedia_outline for detail instead of requesting a whole article",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "default": "en",
+            "description": "Active Wikipedia edition code from the provider's checked-in allowlist; defaults to en (for example: de, fr, simple, zh-min-nan).",
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9-]{0,15}$",
+            "type": "string"
+          },
+          "max_chars": {
+            "default": 900,
+            "description": "Maximum Unicode characters in the compact lead.",
+            "maximum": 1200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": {
+            "description": "Exact title from wikipedia_search; redirects resolve through Wikipedia only.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "wikipedia_outline",
+      "description": "List a page's bounded table of contents; choose one returned index and pass it unchanged to wikipedia_section",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "default": "en",
+            "description": "Active Wikipedia edition code from the provider's checked-in allowlist; defaults to en (for example: de, fr, simple, zh-min-nan).",
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9-]{0,15}$",
+            "type": "string"
+          },
+          "max_sections": {
+            "default": 30,
+            "description": "Maximum outline entries; no continuation is drained.",
+            "maximum": 60,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": {
+            "description": "Canonical or redirecting Wikipedia title from search/page.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "wikipedia_section",
+      "description": "Retrieve exactly one bounded section selected from wikipedia_outline and pinned to the resolved revision; never dumps a whole article",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "default": "en",
+            "description": "Active Wikipedia edition code from the provider's checked-in allowlist; defaults to en (for example: de, fr, simple, zh-min-nan).",
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9-]{0,15}$",
+            "type": "string"
+          },
+          "max_chars": {
+            "default": 3000,
+            "description": "Maximum Unicode characters in the selected section plaintext.",
+            "maximum": 8000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "section_index": {
+            "description": "Copy one index exactly from wikipedia_outline; headings are not accepted as selectors.",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "description": "The same title used for the outline.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "section_index"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "id": "wikipedia_links",
+      "description": "After reading a page, list one bounded page of main-namespace links for controlled follow-up; search or inspect selected links rather than spidering blindly",
+      "effect": "read-only",
+      "risk": "Low",
+      "idempotency": "idempotent",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "description": "Cursor returned by the preceding identical wikipedia_links request; do not edit it.",
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "language": {
+            "default": "en",
+            "description": "Active Wikipedia edition code from the provider's checked-in allowlist; defaults to en (for example: de, fr, simple, zh-min-nan).",
+            "maxLength": 16,
+            "pattern": "^[a-z][a-z0-9-]{0,15}$",
+            "type": "string"
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum main-namespace links from one API page.",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": {
+            "description": "Canonical or redirecting page whose article links should be listed.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "commandWords": []
+}

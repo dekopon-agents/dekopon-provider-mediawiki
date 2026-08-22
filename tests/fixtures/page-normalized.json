@@ -1,0 +1,16 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "normalized": [{"fromencoded": false, "from": "ada_lovelace", "to": "Ada lovelace"}],
+    "redirects": [{"from": "Ada lovelace", "to": "Ada Lovelace"}],
+    "pages": [{
+      "pageid": 974,
+      "ns": 0,
+      "title": "Ada Lovelace",
+      "lastrevid": 1370153024,
+      "description": "English mathematician (1815–1852)",
+      "extract": "Ada Lovelace was an English mathematician and writer.",
+      "pageprops": {"wikibase_item": "Q7259"}
+    }]
+  }
+}

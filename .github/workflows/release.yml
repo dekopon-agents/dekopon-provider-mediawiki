@@ -1,0 +1,158 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PROVIDER_MSRV: "1.89.0"
+  PROVIDER_RUST_TOOLCHAIN: "1.97.0"
+  WASM_TOOLS_VERSION: "1.236.1"
+  ORAS_VERSION: "1.2.3"
+  ORAS_LINUX_AMD64_SHA256: "b4efc97a91f471f323f193ea4b4d63d8ff443ca3aab514151a30751330852827"
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the immutable tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify annotated stable SemVer tag, package version, and main ancestry
+        id: release-metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "error: release tag must be strict v<major>.<minor>.<patch> SemVer" >&2
+            exit 1
+          fi
+          if [[ "$(git cat-file -t "refs/tags/$tag")" != tag ]]; then
+            echo "error: $tag must be an annotated tag" >&2
+            exit 1
+          fi
+          version=$(cargo metadata --locked --no-deps --format-version 1 \
+            | jq -er '.packages[] | select(.name == "dekopon-mediawiki-provider") | .version')
+          if [[ "$tag" != "v$version" ]]; then
+            echo "error: tag $tag does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$tag^{}" refs/remotes/origin/main; then
+            echo "error: release tag does not point into main" >&2
+            exit 1
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Install pinned Rust and wasm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$PROVIDER_MSRV" --profile minimal
+          rustup toolchain install "$PROVIDER_RUST_TOOLCHAIN" --profile minimal \
+            --component clippy --component rustfmt
+          rustup target add wasm32-unknown-unknown --toolchain "$PROVIDER_RUST_TOOLCHAIN"
+          rustup override set "$PROVIDER_RUST_TOOLCHAIN"
+          cargo install wasm-tools --version "$WASM_TOOLS_VERSION" --locked
+
+      - name: Run the shared shipping gates
+        run: ./scripts/validate.sh
+
+      - name: Check out an independent rebuild
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.ref }}
+          path: rebuild
+          persist-credentials: false
+
+      - name: Rebuild independently and compare bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd rebuild && ./build.sh)
+          cmp mediawiki-provider.wasm rebuild/mediawiki-provider.wasm
+          cmp mediawiki-provider.wasm.sha256 rebuild/mediawiki-provider.wasm.sha256
+
+      - name: Attest the component
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: mediawiki-provider.wasm
+
+      - name: Create a draft release with exactly two assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --draft \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            mediawiki-provider.wasm mediawiki-provider.wasm.sha256
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq '[.assets[].name] | sort | join("\n")')
+          expected=$'mediawiki-provider.wasm\nmediawiki-provider.wasm.sha256'
+          [[ "$assets" == "$expected" ]]
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install pinned ORAS
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "$ORAS_LINUX_AMD64_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" oras
+          install -m 0755 "$RUNNER_TEMP/oras" "$RUNNER_TEMP/bin-oras"
+
+      - name: Publish the identical component bytes to GHCR
+        env:
+          VERSION: ${{ steps.release-metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="ghcr.io/dekopon-agents/provider-mediawiki:$VERSION"
+          "$RUNNER_TEMP/bin-oras" push "$ref" \
+            --artifact-type application/vnd.dekopon.provider.v1+wasm \
+            mediawiki-provider.wasm:application/wasm
+          expected="sha256:$(awk '{print $1}' mediawiki-provider.wasm.sha256)"
+          "$RUNNER_TEMP/bin-oras" manifest fetch "$ref" >"$RUNNER_TEMP/manifest.json"
+          jq -e --arg expected "$expected" '
+            (.layers | length) == 1 and
+            (.layers[0].digest == $expected) and
+            (.layers[0].mediaType == "application/wasm")
+          ' "$RUNNER_TEMP/manifest.json" >/dev/null
+
+      - name: Finalize the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = false

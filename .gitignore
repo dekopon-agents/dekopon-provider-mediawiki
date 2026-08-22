@@ -1,0 +1,7 @@
+/target/
+/mediawiki-provider.wasm
+/mediawiki-provider.wasm.sha256
+/deps.tree
+/core-imports.txt
+/component.wit
+.DS_Store
