@@ -156,20 +156,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          error_file="$RUNNER_TEMP/release-inspect.err"
-          if draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq .draft 2>"$error_file"); then
-            if [[ "$draft" != true ]]; then
-              echo "error: an already-published release exists for $GITHUB_REF_NAME" >&2
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" >"$RUNNER_TEMP/releases.json"
+          count=$(jq --arg tag "$GITHUB_REF_NAME" \
+            '[.[] | select(.tag_name == $tag)] | length' "$RUNNER_TEMP/releases.json")
+          case "$count" in
+            0) echo "mode=create" >>"$GITHUB_OUTPUT" ;;
+            1)
+              draft=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+                '.[] | select(.tag_name == $tag) | .draft' "$RUNNER_TEMP/releases.json")
+              if [[ "$draft" != true ]]; then
+                echo "error: an already-published release exists for $GITHUB_REF_NAME" >&2
+                exit 1
+              fi
+              echo "mode=reuse" >>"$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "error: multiple releases unexpectedly use $GITHUB_REF_NAME" >&2
               exit 1
-            fi
-            echo "mode=reuse" >>"$GITHUB_OUTPUT"
-          elif grep -q 'HTTP 404' "$error_file"; then
-            echo "mode=create" >>"$GITHUB_OUTPUT"
-          else
-            cat "$error_file" >&2
-            exit 1
-          fi
+              ;;
+          esac
       - name: Create draft release
         if: steps.release-state.outputs.mode == 'create'
         env:
@@ -189,25 +194,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = true
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq '[.assets[].name] | sort | join("\n")')
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" >"$RUNNER_TEMP/releases.json"
+          count=$(jq --arg tag "$GITHUB_REF_NAME" \
+            '[.[] | select(.tag_name == $tag)] | length' "$RUNNER_TEMP/releases.json")
+          [[ "$count" == 1 ]]
+          release_id=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '.[] | select(.tag_name == $tag) | .id' "$RUNNER_TEMP/releases.json")
+          draft=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '.[] | select(.tag_name == $tag) | .draft' "$RUNNER_TEMP/releases.json")
+          [[ "$draft" == true ]]
+          assets=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '[.[] | select(.tag_name == $tag) | .assets[].name] | sort | join("\n")' \
+            "$RUNNER_TEMP/releases.json")
           expected=$'mediawiki-provider.wasm\nmediawiki-provider.wasm.sha256'
           [[ "$assets" == "$expected" ]]
           mkdir "$RUNNER_TEMP/release-assets"
-          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/release-assets" \
-            --pattern mediawiki-provider.wasm \
-            --pattern mediawiki-provider.wasm.sha256
+          for name in mediawiki-provider.wasm mediawiki-provider.wasm.sha256; do
+            asset_id=$(jq -r --arg tag "$GITHUB_REF_NAME" --arg name "$name" \
+              '.[] | select(.tag_name == $tag) | .assets[] | select(.name == $name) | .id' \
+              "$RUNNER_TEMP/releases.json")
+            gh api -H 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+              >"$RUNNER_TEMP/release-assets/$name"
+          done
           (cd "$RUNNER_TEMP/release-assets" && \
             sha256sum --check --strict mediawiki-provider.wasm.sha256)
           cmp dist/mediawiki-provider.wasm "$RUNNER_TEMP/release-assets/mediawiki-provider.wasm"
           cmp dist/mediawiki-provider.wasm.sha256 \
             "$RUNNER_TEMP/release-assets/mediawiki-provider.wasm.sha256"
+          test -n "$release_id"
       - name: Remove only a newly created failed draft
         if: failure() && steps.release-state.outputs.mode == 'create'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete "$GITHUB_REF_NAME" --yes || true
+        shell: bash
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" >"$RUNNER_TEMP/cleanup.json" || exit 0
+          release_id=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '.[] | select(.tag_name == $tag and .draft == true) | .id' \
+            "$RUNNER_TEMP/cleanup.json")
+          if [[ -n "$release_id" ]]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id" || true
+          fi
 
   ghcr:
     name: publish identical GHCR artifact
@@ -278,22 +306,35 @@ jobs:
           name: release-component
           path: dist
       - name: Verify draft and exact assets before publication
+        id: draft-release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           (cd dist && sha256sum --check --strict mediawiki-provider.wasm.sha256)
-          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = true
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq '[.assets[].name] | sort | join("\n")')
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" >"$RUNNER_TEMP/releases.json"
+          count=$(jq --arg tag "$GITHUB_REF_NAME" \
+            '[.[] | select(.tag_name == $tag)] | length' "$RUNNER_TEMP/releases.json")
+          [[ "$count" == 1 ]]
+          release_id=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '.[] | select(.tag_name == $tag and .draft == true) | .id' \
+            "$RUNNER_TEMP/releases.json")
+          test -n "$release_id"
+          assets=$(jq -r --arg tag "$GITHUB_REF_NAME" \
+            '[.[] | select(.tag_name == $tag) | .assets[].name] | sort | join("\n")' \
+            "$RUNNER_TEMP/releases.json")
           expected=$'mediawiki-provider.wasm\nmediawiki-provider.wasm.sha256'
           [[ "$assets" == "$expected" ]]
+          echo "release_id=$release_id" >>"$GITHUB_OUTPUT"
       - name: Finalize the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft-release.outputs.release_id }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false >"$RUNNER_TEMP/published.json"
+          test "$(jq -r .draft "$RUNNER_TEMP/published.json")" = false
           test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .draft)" = false

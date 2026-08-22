@@ -75,6 +75,8 @@ After confirming that no GitHub Release existed, the unpublished failed tag was 
 
 The second release run [`32562814764`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32562814764) passed build/reproducibility and recorded a Wasm attestation, then failed before draft creation: the contents-write job intentionally had no checkout, and `gh release create --verify-tag` had no repository context. The GHCR/finalize jobs were skipped; inspection confirmed no release. The unpublished tag was again removed. The bounded correction sets `GH_REPO=${{ github.repository }}` only on the draft/finalize jobs, letting `gh` resolve the repository without adding source checkout to privileged jobs; an outside-checkout `gh release view` probe confirmed that resolution path.
 
+Main CI [`32563115239`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563115239) passed that correction. Release run [`32563311890`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563311890) then built and attested successfully and created the draft, but the REST “release by tag” endpoint returned 404 for that draft. Cleanup removed it, GHCR/finalize were skipped, and the releases-list API confirmed no retained release before the tag was withdrawn. Draft discovery, verification, asset download, cleanup, and finalization now use authenticated `/releases` listing plus release/asset IDs; only the final published-state check uses `/releases/tags/{tag}`. This was a release-API state-model correction, not a relaxation of any gate.
+
 ## Friction and fixes
 
 - The sister provider was on SDK `0.9.0`; reading the published `0.10.0` crates and tagged core source avoided copying a stale dependency/command precedent.
