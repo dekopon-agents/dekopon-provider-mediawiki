@@ -99,7 +99,13 @@ The first annotated `v0.1.0` push reached release run `32562529644` and failed b
 
 Corrected main CI `32562623052` passed. Release run `32562814764` then passed build/reproducibility and attestation but failed before creating a draft because its intentionally checkout-free privileged job gave `gh release create` no repository context. GHCR/finalize were skipped and no release existed. The tag was removed again; draft/finalize now receive only `GH_REPO`, preserving the no-checkout privilege split.
 
-Main CI `32563115239` passed. Release run `32563311890` built, attested, and created a draft; verification failed because GitHub's release-by-tag endpoint hides drafts. Cleanup removed the draft, downstream jobs were skipped, and releases-list verification found no retained release before tag removal. Draft lifecycle code now discovers by authenticated release list and operates on release/asset IDs, reserving release-by-tag for the published-state check. Final release, asset, and OCI evidence remains to be appended only after observation.
+Main CI `32563115239` passed. Release run `32563311890` built, attested, and created a draft; verification failed because GitHub's release-by-tag endpoint hides drafts. Downstream jobs were skipped and the releases list initially showed no retained release before tag removal. Draft lifecycle code now discovers by authenticated release list and operates on release/asset IDs, reserving release-by-tag for the published-state check.
+
+Final tag-source CI `32563657528` passed at `87692d91d6b6c0e79034c7c974578b6fefecf5cf`. Release run `32563865891` attempt 1 failed closed on two exact-tag draft records visible from prior lifecycle attempts; both were deleted by release ID and absence was verified. Attempt 2 reran failed/skipped jobs and passed draft verification, GHCR publication, and finalization.
+
+Published release: `https://github.com/dekopon-agents/dekopon-provider-mediawiki/releases/tag/v0.1.0`. Its two attached assets are `mediawiki-provider.wasm` (817527 bytes, SHA-256 `3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`) and `mediawiki-provider.wasm.sha256` (90 bytes). Downloaded bytes matched the local reproducible candidate, passed `wasm-tools validate`, and exposed only the reviewed HTTP import plus `describe`/`invoke`. `gh attestation verify` passed with release workflow, tag ref, and source digest enforcement. Anonymous `oras pull ghcr.io/dekopon-agents/provider-mediawiki:0.1.0` returned manifest `sha256:2fa7a87c8f2819b4706a8bf4ab7b40de57c8170f28e26d30ad891e5c1d226afe`; its sole Wasm layer matched the release SHA-256 byte-for-byte.
+
+This observed release result is a post-tag documentation update on `main`, not part of immutable `v0.1.0`.
 
 ## Reusable checklist
 

@@ -75,7 +75,39 @@ After confirming that no GitHub Release existed, the unpublished failed tag was 
 
 The second release run [`32562814764`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32562814764) passed build/reproducibility and recorded a Wasm attestation, then failed before draft creation: the contents-write job intentionally had no checkout, and `gh release create --verify-tag` had no repository context. The GHCR/finalize jobs were skipped; inspection confirmed no release. The unpublished tag was again removed. The bounded correction sets `GH_REPO=${{ github.repository }}` only on the draft/finalize jobs, letting `gh` resolve the repository without adding source checkout to privileged jobs; an outside-checkout `gh release view` probe confirmed that resolution path.
 
-Main CI [`32563115239`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563115239) passed that correction. Release run [`32563311890`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563311890) then built and attested successfully and created the draft, but the REST “release by tag” endpoint returned 404 for that draft. Cleanup removed it, GHCR/finalize were skipped, and the releases-list API confirmed no retained release before the tag was withdrawn. Draft discovery, verification, asset download, cleanup, and finalization now use authenticated `/releases` listing plus release/asset IDs; only the final published-state check uses `/releases/tags/{tag}`. This was a release-API state-model correction, not a relaxation of any gate.
+Main CI [`32563115239`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563115239) passed that correction. Release run [`32563311890`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563311890) then built and attested successfully and created the draft, but the REST “release by tag” endpoint returned 404 for that draft. GHCR/finalize were skipped, and the releases list initially showed no retained release before tag withdrawal. Draft discovery, verification, asset download, cleanup, and finalization were changed to use authenticated `/releases` listing plus release/asset IDs; only the final published-state check uses `/releases/tags/{tag}`. This was a release-API state-model correction, not a relaxation of any gate.
+
+## Published v0.1.0 evidence
+
+Final tag-source CI [`32563657528`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563657528) passed both required jobs at commit [`87692d9`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/commit/87692d91d6b6c0e79034c7c974578b6fefecf5cf). Release run [`32563865891`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/actions/runs/32563865891) attempt 1 encountered two exact-tag draft records left visible by the earlier draft lifecycle; verification failed closed before GHCR/finalization. Both draft IDs were deleted through the API and the list was verified empty. Rerunning only failed/skipped jobs as attempt 2 then passed draft creation, exact asset download/byte comparison, anonymous GHCR publication, and finalization.
+
+The annotated [`v0.1.0`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/releases/tag/v0.1.0) tag points to `87692d91d6b6c0e79034c7c974578b6fefecf5cf`. The published release contains exactly these attached assets (not source archives):
+
+- [`mediawiki-provider.wasm`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/releases/download/v0.1.0/mediawiki-provider.wasm) — 817,527 bytes, SHA-256 `3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`;
+- [`mediawiki-provider.wasm.sha256`](https://github.com/dekopon-agents/dekopon-provider-mediawiki/releases/download/v0.1.0/mediawiki-provider.wasm.sha256) — 90 bytes, asset SHA-256 `42b65894fa82cd21c0235a3b7ce61856a8947d0b3c638293486b5194bd597787`.
+
+Observed verification commands were:
+
+```console
+gh release view v0.1.0 --repo dekopon-agents/dekopon-provider-mediawiki --json assets,isDraft,url
+gh release download v0.1.0 --repo dekopon-agents/dekopon-provider-mediawiki \
+  --pattern mediawiki-provider.wasm --pattern mediawiki-provider.wasm.sha256
+shasum -a 256 mediawiki-provider.wasm
+wasm-tools validate mediawiki-provider.wasm
+wasm-tools component wit mediawiki-provider.wasm
+gh attestation verify mediawiki-provider.wasm \
+  --repo dekopon-agents/dekopon-provider-mediawiki \
+  --signer-workflow dekopon-agents/dekopon-provider-mediawiki/.github/workflows/release.yml \
+  --source-ref refs/tags/v0.1.0 \
+  --source-digest 87692d91d6b6c0e79034c7c974578b6fefecf5cf
+DOCKER_CONFIG=<empty-directory> oras pull \
+  ghcr.io/dekopon-agents/provider-mediawiki:0.1.0
+cmp release/mediawiki-provider.wasm oci/dist/mediawiki-provider.wasm
+```
+
+The downloaded component validated, imported only `dekopon:http/client@1.0.0`, and exported exactly `describe` and `invoke`. Provenance verification enforced the release workflow, tag ref, and source digest and returned SLSA provenance for the same SHA-256. An anonymous OCI pull succeeded: manifest digest `sha256:2fa7a87c8f2819b4706a8bf4ab7b40de57c8170f28e26d30ad891e5c1d226afe`; its sole `application/wasm` layer was byte-identical at `sha256:3725b550e93acf1d0b72e9638c00033c51d276c016fafbb99014877eefb7d8d6`.
+
+This section is a post-release documentation update on `main`; it is intentionally newer than the immutable release tag. The `v0.1.0` tag contains the released code, workflows, pre-release review record, and draft-ID fix, but not this observed-outcome section.
 
 ## Friction and fixes
 
