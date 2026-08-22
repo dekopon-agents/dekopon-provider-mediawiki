@@ -95,7 +95,9 @@ The earlier hash above is retained as the chronological pre-review baseline and 
 
 ## Release record
 
-The first annotated `v0.1.0` push reached release run `32562529644` and failed before building because checkout had dereferenced the tag locally; the object-type gate therefore mistook it for a lightweight tag. Main CI `32562300310` had passed. After confirming there was no release or draft, the unpublished tag was deleted locally/remotely. The workflow now explicitly fetches the tag ref before requiring object type `tag`. Final release, attestation, asset, and OCI evidence remains to be appended only after observation.
+The first annotated `v0.1.0` push reached release run `32562529644` and failed before building because checkout had dereferenced the tag locally; the object-type gate therefore mistook it for a lightweight tag. Main CI `32562300310` had passed. After confirming there was no release or draft, the unpublished tag was deleted locally/remotely. The workflow now explicitly fetches the tag ref before requiring object type `tag`.
+
+Corrected main CI `32562623052` passed. Release run `32562814764` then passed build/reproducibility and attestation but failed before creating a draft because its intentionally checkout-free privileged job gave `gh release create` no repository context. GHCR/finalize were skipped and no release existed. The tag was removed again; draft/finalize now receive only `GH_REPO`, preserving the no-checkout privilege split. Final release, asset, and OCI evidence remains to be appended only after observation.
 
 ## Reusable checklist
 
