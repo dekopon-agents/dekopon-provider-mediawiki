@@ -1,5 +1,5 @@
 use dekopon_provider_sdk::{
-    EffectKind, Idempotency, ProviderApiVersion, ProviderCapability, ProviderManifest, RiskLevel,
+    EffectKind, ProviderApiVersion, ProviderCapability, ProviderManifest, RiskLevel,
 };
 use serde_json::{Value, json};
 
@@ -130,7 +130,6 @@ fn read(id: &str, description: &str, input_schema: Value) -> ProviderCapability 
         description: description.to_owned(),
         effect: EffectKind::ReadOnly,
         risk: RiskLevel::Low,
-        idempotency: Idempotency::Idempotent,
         input_schema,
     }
 }
@@ -173,7 +172,7 @@ fn cursor_property(description: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_sdk::{EffectKind, Idempotency, RiskLevel};
+    use dekopon_provider_sdk::{EffectKind, RiskLevel};
     use serde_json::json;
 
     use super::manifest;
@@ -200,7 +199,6 @@ mod tests {
         for capability in &manifest.capabilities {
             assert_eq!(capability.effect, EffectKind::ReadOnly);
             assert_eq!(capability.risk, RiskLevel::Low);
-            assert_eq!(capability.idempotency, Idempotency::Idempotent);
             assert_eq!(capability.input_schema["type"], "object");
             assert_eq!(
                 capability.input_schema["additionalProperties"],
