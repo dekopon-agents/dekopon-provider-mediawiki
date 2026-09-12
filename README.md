@@ -56,7 +56,6 @@ constraintSets:
     provider: mediawiki
     effect: read-only
     risk: Low
-    idempotency: idempotent
     constraints: &wikipediaOneRequest
       timeoutMs: 10000
       maxOutputBytes: 16384
@@ -71,13 +70,11 @@ constraintSets:
     provider: mediawiki
     effect: read-only
     risk: Low
-    idempotency: idempotent
     constraints: *wikipediaOneRequest
   wikipedia_outline:
     provider: mediawiki
     effect: read-only
     risk: Low
-    idempotency: idempotent
     constraints:
       timeoutMs: 10000
       maxOutputBytes: 16384
@@ -92,13 +89,11 @@ constraintSets:
     provider: mediawiki
     effect: read-only
     risk: Low
-    idempotency: idempotent
     constraints: *wikipediaOneRequest
   wikipedia_section:
     provider: mediawiki
     effect: read-only
     risk: Low
-    idempotency: idempotent
     constraints:
       timeoutMs: 10000
       maxOutputBytes: 16384
@@ -113,17 +108,16 @@ constraintSets:
 
 Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools.
 
-HTTP imports are linked only by the broker. The import-free direct `dekopon-run` execution path is expected to reject this component.
+HTTP imports are linked only by the broker. Nothing else links them, so the component is inert outside a broker that supplies `dekopon:http/client`.
 
 ## Build and validate
 
 The release toolchain and encoder are exact pins:
 
 ```console
-rustup toolchain install 1.89.0 --profile minimal
-rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
-rustup target add wasm32-unknown-unknown --toolchain 1.97.0
-rustup run 1.97.0 cargo install wasm-tools --version 1.236.1 --locked
+rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
+rustup target add wasm32-unknown-unknown --toolchain 1.98.1
+rustup run 1.98.1 cargo install wasm-tools --version 1.259.0 --locked
 cargo test --locked --package dekopon-mediawiki-provider
 ./scripts/validate.sh
 ./build.sh

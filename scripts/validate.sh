@@ -10,19 +10,19 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 command -v wasm-tools >/dev/null 2>&1 || {
-  echo "error: wasm-tools 1.236.1 is required" >&2
+  echo "error: wasm-tools 1.259.0 is required" >&2
   exit 1
 }
-if [[ "$(wasm-tools --version)" != "wasm-tools 1.236.1" ]]; then
-  echo "error: expected wasm-tools 1.236.1" >&2
+if [[ "$(wasm-tools --version)" != "wasm-tools 1.259.0" ]]; then
+  echo "error: expected wasm-tools 1.259.0" >&2
   exit 1
 fi
 
-if ! rustup run 1.89.0 rustc --version >/dev/null 2>&1; then
-  echo "error: Rust 1.89.0 is required for the declared MSRV check" >&2
+if ! rustup run 1.98.1 rustc --version >/dev/null 2>&1; then
+  echo "error: Rust 1.98.1 is required for the declared MSRV check" >&2
   exit 1
 fi
-cargo +1.89.0 check --locked --all-targets --package dekopon-mediawiki-provider
+cargo +1.98.1 check --locked --all-targets --package dekopon-mediawiki-provider
 cargo fmt --all -- --check
 cargo test --locked --package dekopon-mediawiki-provider
 cargo clippy --all-targets --locked --package dekopon-mediawiki-provider -- -D warnings
@@ -30,10 +30,10 @@ cargo check --locked --package dekopon-mediawiki-provider --target wasm32-unknow
 cargo clippy --locked --package dekopon-mediawiki-provider --target wasm32-unknown-unknown --lib -- -D warnings
 
 metadata=$(cargo metadata --locked --format-version 1)
-sdk_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-sdk" and .version == "0.10.0") | .manifest_path' <<<"$metadata")
-http_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-http" and .version == "0.10.0") | .manifest_path' <<<"$metadata")
-wit_version=$(jq -er '.packages[] | select(.name == "wit-bindgen" and .version == "0.44.0") | .version' <<<"$metadata")
-[[ "$wit_version" == "0.44.0" ]]
+sdk_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-sdk" and .version == "0.13.0") | .manifest_path' <<<"$metadata")
+http_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-http" and .version == "0.13.0") | .manifest_path' <<<"$metadata")
+wit_version=$(jq -er '.packages[] | select(.name == "wit-bindgen" and .version == "0.62.0") | .version' <<<"$metadata")
+[[ "$wit_version" == "0.62.0" ]]
 cmp "$(dirname "$sdk_manifest")/wit/provider.wit" wit/deps/provider.wit
 cmp "$(dirname "$http_manifest")/wit/deps/http.wit" wit/deps/http.wit
 

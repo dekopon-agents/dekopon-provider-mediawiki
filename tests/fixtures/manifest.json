@@ -8,7 +8,6 @@
       "description": "Start here: find bounded Wikipedia page candidates, then pass one exact title to wikipedia_page for a compact overview",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -49,7 +48,6 @@
       "description": "After search, read one compact canonical lead and identity; use wikipedia_outline for detail instead of requesting a whole article",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -85,7 +83,6 @@
       "description": "List a page's bounded table of contents; choose one returned index and pass it unchanged to wikipedia_section",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -121,7 +118,6 @@
       "description": "Retrieve exactly one bounded section selected from wikipedia_outline and pinned to the resolved revision; never dumps a whole article",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -164,7 +160,6 @@
       "description": "After reading a page, list one bounded page of main-namespace links for controlled follow-up; search or inspect selected links rather than spidering blindly",
       "effect": "read-only",
       "risk": "Low",
-      "idempotency": "idempotent",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
