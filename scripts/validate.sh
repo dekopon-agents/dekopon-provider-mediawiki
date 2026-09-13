@@ -30,8 +30,8 @@ cargo check --locked --package dekopon-mediawiki-provider --target wasm32-unknow
 cargo clippy --locked --package dekopon-mediawiki-provider --target wasm32-unknown-unknown --lib -- -D warnings
 
 metadata=$(cargo metadata --locked --format-version 1)
-sdk_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-sdk" and .version == "0.13.0") | .manifest_path' <<<"$metadata")
-http_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-http" and .version == "0.13.0") | .manifest_path' <<<"$metadata")
+sdk_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-sdk" and .version == "0.15.0") | .manifest_path' <<<"$metadata")
+http_manifest=$(jq -er '.packages[] | select(.name == "dekopon-provider-http" and .version == "0.15.0") | .manifest_path' <<<"$metadata")
 wit_version=$(jq -er '.packages[] | select(.name == "wit-bindgen" and .version == "0.62.0") | .version' <<<"$metadata")
 [[ "$wit_version" == "0.62.0" ]]
 cmp "$(dirname "$sdk_manifest")/wit/provider.wit" wit/deps/provider.wit
