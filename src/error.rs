@@ -34,42 +34,42 @@ pub(crate) fn invalid_query() -> ProviderError {
 pub(crate) fn invalid_cursor() -> ProviderError {
     ProviderError::new(
         "invalid_cursor",
-        "cursor is invalid or does not match this request; restart the same tool without cursor",
+        "cursor is invalid or does not match this request; rerun the same command without --cursor",
     )
 }
 
 pub(crate) fn invalid_title() -> ProviderError {
     ProviderError::new(
         "invalid_title",
-        "title must be nonblank, control-free UTF-8 of at most 255 bytes; copy a search title",
+        "title must be nonblank, control-free UTF-8 of at most 255 bytes; copy one from `wikipedia search`",
     )
 }
 
 pub(crate) fn invalid_section_index() -> ProviderError {
     ProviderError::new(
         "invalid_input",
-        "section_index must be copied unchanged from wikipedia_outline",
+        "--section-index must be copied unchanged from `wikipedia outline`",
     )
 }
 
 pub(crate) fn not_found() -> ProviderError {
     ProviderError::new(
         "not_found",
-        "Wikipedia has no matching main-namespace page; search for the canonical title",
+        "Wikipedia has no matching main-namespace page; find the canonical title with `wikipedia search`",
     )
 }
 
 pub(crate) fn no_such_section() -> ProviderError {
     ProviderError::new(
         "no_such_section",
-        "section_index was not found; call wikipedia_outline again and copy a current index",
+        "--section-index was not found; run `wikipedia outline` again and copy a current index",
     )
 }
 
 pub(crate) fn parse_failed() -> ProviderError {
     ProviderError::new(
         "parse_failed",
-        "Wikipedia did not return a valid parsed page; retry the outline or choose another page",
+        "Wikipedia did not return a valid parsed page; rerun `wikipedia outline` or choose another page",
     )
 }
 
@@ -111,7 +111,7 @@ pub(crate) fn upstream_error() -> ProviderError {
 pub(crate) fn unknown_capability() -> ProviderError {
     ProviderError::new(
         "invalid_input",
-        "unknown MediaWiki capability; use one of the five declared wikipedia_* tools",
+        "unknown MediaWiki capability; run `wikipedia --help` for the five commands",
     )
 }
 
@@ -169,7 +169,43 @@ pub(crate) fn api(code: &str, operation: Operation, had_cursor: bool) -> Provide
 mod tests {
     use dekopon_provider_http::{HttpError, HttpErrorCode};
 
-    use super::{Operation, api, status, transport};
+    use super::{
+        Operation, api, invalid_cursor, invalid_input, invalid_language, invalid_query,
+        invalid_request, invalid_section_index, invalid_title, maxlag, no_such_section, not_found,
+        parse_failed, rate_limited, response_too_large, status, timeout, transport,
+        unknown_capability, upstream_error,
+    };
+
+    /// A model reaches this provider only through `wikipedia <verb>`, and a bare capability id is
+    /// not a command it can run, so no message may send it to one.
+    #[test]
+    fn no_message_names_a_capability_id() {
+        for error in [
+            invalid_input(),
+            invalid_language(),
+            invalid_query(),
+            invalid_cursor(),
+            invalid_title(),
+            invalid_section_index(),
+            not_found(),
+            no_such_section(),
+            parse_failed(),
+            rate_limited(),
+            maxlag(),
+            timeout(),
+            response_too_large(),
+            upstream_error(),
+            unknown_capability(),
+            invalid_request(),
+        ] {
+            assert!(
+                !error.message().contains("wikipedia_"),
+                "{}: {}",
+                error.code(),
+                error.message()
+            );
+        }
+    }
 
     #[test]
     fn maps_transport_and_status_without_exposing_details() {

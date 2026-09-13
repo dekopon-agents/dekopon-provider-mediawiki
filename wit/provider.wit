@@ -1,7 +1,8 @@
 package dekopon:mediawiki@0.1.0;
 
-/// Five bounded, read-only Wikipedia operations that require broker-mediated HTTP.
+/// Five bounded, read-only Wikipedia operations that require broker-mediated HTTP and contribute the
+/// `wikipedia` command word.
 world provider {
-    include dekopon:provider/provider@0.3.0;
+    include dekopon:provider/provider-cli@0.3.0;
     import dekopon:http/client@1.0.0;
 }
