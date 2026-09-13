@@ -5,14 +5,14 @@
   "capabilities": [
     {
       "id": "wikipedia_search",
-      "description": "Start here: find bounded Wikipedia page candidates, then pass one exact title to wikipedia_page for a compact overview",
+      "description": "Start here: find bounded Wikipedia page candidates, then pass one exact title to `wikipedia page --title` for a compact overview",
       "effect": "read-only",
       "risk": "Low",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "cursor": {
-            "description": "Cursor returned by the preceding identical wikipedia_search request; do not edit it.",
+            "description": "Cursor returned by the preceding identical `wikipedia search`; do not edit it.",
             "maxLength": 2048,
             "type": "string"
           },
@@ -45,7 +45,7 @@
     },
     {
       "id": "wikipedia_page",
-      "description": "After search, read one compact canonical lead and identity; use wikipedia_outline for detail instead of requesting a whole article",
+      "description": "After search, read one compact canonical lead and identity; use `wikipedia outline` for detail instead of requesting a whole article",
       "effect": "read-only",
       "risk": "Low",
       "inputSchema": {
@@ -66,7 +66,7 @@
             "type": "integer"
           },
           "title": {
-            "description": "Exact title from wikipedia_search; redirects resolve through Wikipedia only.",
+            "description": "Exact title from `wikipedia search`; redirects resolve through Wikipedia only.",
             "maxLength": 255,
             "minLength": 1,
             "type": "string"
@@ -80,7 +80,7 @@
     },
     {
       "id": "wikipedia_outline",
-      "description": "List a page's bounded table of contents; choose one returned index and pass it unchanged to wikipedia_section",
+      "description": "List a page's bounded table of contents; choose one returned index and pass it unchanged to `wikipedia section --section-index`",
       "effect": "read-only",
       "risk": "Low",
       "inputSchema": {
@@ -101,7 +101,7 @@
             "type": "integer"
           },
           "title": {
-            "description": "Canonical or redirecting Wikipedia title from search/page.",
+            "description": "Canonical or redirecting Wikipedia title from `wikipedia search` or `wikipedia page`.",
             "maxLength": 255,
             "minLength": 1,
             "type": "string"
@@ -115,7 +115,7 @@
     },
     {
       "id": "wikipedia_section",
-      "description": "Retrieve exactly one bounded section selected from wikipedia_outline and pinned to the resolved revision; never dumps a whole article",
+      "description": "Retrieve exactly one bounded section selected from `wikipedia outline` and pinned to the resolved revision; never dumps a whole article",
       "effect": "read-only",
       "risk": "Low",
       "inputSchema": {
@@ -136,13 +136,13 @@
             "type": "integer"
           },
           "section_index": {
-            "description": "Copy one index exactly from wikipedia_outline; headings are not accepted as selectors.",
+            "description": "Copy one index exactly from `wikipedia outline`; headings are not accepted as selectors.",
             "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "title": {
-            "description": "The same title used for the outline.",
+            "description": "The same title used for `wikipedia outline`.",
             "maxLength": 255,
             "minLength": 1,
             "type": "string"
@@ -157,14 +157,14 @@
     },
     {
       "id": "wikipedia_links",
-      "description": "After reading a page, list one bounded page of main-namespace links for controlled follow-up; search or inspect selected links rather than spidering blindly",
+      "description": "After reading a page, list one bounded page of main-namespace links for controlled follow-up; run `wikipedia search` or `wikipedia page` on selected links rather than spidering blindly",
       "effect": "read-only",
       "risk": "Low",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "cursor": {
-            "description": "Cursor returned by the preceding identical wikipedia_links request; do not edit it.",
+            "description": "Cursor returned by the preceding identical `wikipedia links`; do not edit it.",
             "maxLength": 2048,
             "type": "string"
           },

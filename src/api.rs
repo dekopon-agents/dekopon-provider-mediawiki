@@ -1229,7 +1229,7 @@ mod tests {
         .expect_err("unknown outline index fails");
         assert_eq!(calls, 2);
         assert_eq!(error.code(), "no_such_section");
-        assert!(error.message().contains("wikipedia_outline"));
+        assert!(error.message().contains("`wikipedia outline`"));
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub(crate) fn manifest() -> ProviderManifest {
         capabilities: vec![
             read(
                 SEARCH,
-                "Start here: find bounded Wikipedia page candidates, then pass one exact title to wikipedia_page for a compact overview",
+                "Start here: find bounded Wikipedia page candidates, then pass one exact title to `wikipedia page --title` for a compact overview",
                 object_schema(
                     json!({
                         "query": {
@@ -37,17 +37,17 @@ pub(crate) fn manifest() -> ProviderManifest {
                             "default": DEFAULT_SEARCH_LIMIT,
                             "description": "Maximum candidates from one API page."
                         },
-                        "cursor": cursor_property("Cursor returned by the preceding identical wikipedia_search request; do not edit it."),
+                        "cursor": cursor_property("Cursor returned by the preceding identical `wikipedia search`; do not edit it."),
                     }),
                     &["query"],
                 ),
             ),
             read(
                 PAGE,
-                "After search, read one compact canonical lead and identity; use wikipedia_outline for detail instead of requesting a whole article",
+                "After search, read one compact canonical lead and identity; use `wikipedia outline` for detail instead of requesting a whole article",
                 object_schema(
                     json!({
-                        "title": title_property("Exact title from wikipedia_search; redirects resolve through Wikipedia only."),
+                        "title": title_property("Exact title from `wikipedia search`; redirects resolve through Wikipedia only."),
                         "language": language_property(),
                         "max_chars": {
                             "type": "integer",
@@ -62,10 +62,10 @@ pub(crate) fn manifest() -> ProviderManifest {
             ),
             read(
                 OUTLINE,
-                "List a page's bounded table of contents; choose one returned index and pass it unchanged to wikipedia_section",
+                "List a page's bounded table of contents; choose one returned index and pass it unchanged to `wikipedia section --section-index`",
                 object_schema(
                     json!({
-                        "title": title_property("Canonical or redirecting Wikipedia title from search/page."),
+                        "title": title_property("Canonical or redirecting Wikipedia title from `wikipedia search` or `wikipedia page`."),
                         "language": language_property(),
                         "max_sections": {
                             "type": "integer",
@@ -80,15 +80,15 @@ pub(crate) fn manifest() -> ProviderManifest {
             ),
             read(
                 SECTION,
-                "Retrieve exactly one bounded section selected from wikipedia_outline and pinned to the resolved revision; never dumps a whole article",
+                "Retrieve exactly one bounded section selected from `wikipedia outline` and pinned to the resolved revision; never dumps a whole article",
                 object_schema(
                     json!({
-                        "title": title_property("The same title used for the outline."),
+                        "title": title_property("The same title used for `wikipedia outline`."),
                         "section_index": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 32,
-                            "description": "Copy one index exactly from wikipedia_outline; headings are not accepted as selectors."
+                            "description": "Copy one index exactly from `wikipedia outline`; headings are not accepted as selectors."
                         },
                         "language": language_property(),
                         "max_chars": {
@@ -104,7 +104,7 @@ pub(crate) fn manifest() -> ProviderManifest {
             ),
             read(
                 LINKS,
-                "After reading a page, list one bounded page of main-namespace links for controlled follow-up; search or inspect selected links rather than spidering blindly",
+                "After reading a page, list one bounded page of main-namespace links for controlled follow-up; run `wikipedia search` or `wikipedia page` on selected links rather than spidering blindly",
                 object_schema(
                     json!({
                         "title": title_property("Canonical or redirecting page whose article links should be listed."),
@@ -116,7 +116,7 @@ pub(crate) fn manifest() -> ProviderManifest {
                             "default": DEFAULT_LINK_LIMIT,
                             "description": "Maximum main-namespace links from one API page."
                         },
-                        "cursor": cursor_property("Cursor returned by the preceding identical wikipedia_links request; do not edit it."),
+                        "cursor": cursor_property("Cursor returned by the preceding identical `wikipedia links`; do not edit it."),
                     }),
                     &["title"],
                 ),
@@ -205,9 +205,17 @@ mod tests {
                 capability.input_schema["additionalProperties"],
                 json!(false)
             );
+            // A model can only run `wikipedia <verb>`, so guidance names commands, never an id.
             assert!(
-                capability.description.contains("wikipedia_")
-                    || capability.id.as_str() == "wikipedia_links"
+                capability.description.contains("`wikipedia "),
+                "{}",
+                capability.id
+            );
+            assert!(
+                !capability.description.contains("wikipedia_")
+                    && !capability.input_schema.to_string().contains("wikipedia_"),
+                "{}",
+                capability.id
             );
         }
     }
