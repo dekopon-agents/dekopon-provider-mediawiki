@@ -1,14 +1,14 @@
 # dekopon-provider-mediawiki
 
-A standalone WebAssembly component providing five bounded, read-only Wikipedia capabilities to [Dekopon](https://github.com/dekopon-agents/dekopon).
+A standalone WebAssembly component giving [Dekopon](https://github.com/dekopon-agents/dekopon) five bounded, read-only Wikipedia capabilities behind one command word, `wikipedia`.
 
-The tool path is intentionally small and sequential:
+The path is intentionally small and sequential:
 
-1. `wikipedia_search` — find candidate titles;
-2. `wikipedia_page` — read a compact canonical lead and identity;
-3. `wikipedia_outline` — choose a section index;
-4. `wikipedia_section` — retrieve exactly that revision-pinned section;
-5. `wikipedia_links` — paginate main-namespace links for controlled follow-up.
+1. `wikipedia search` (`wikipedia_search`) — find candidate titles;
+2. `wikipedia page` (`wikipedia_page`) — read a compact canonical lead and identity;
+3. `wikipedia outline` (`wikipedia_outline`) — choose a section index;
+4. `wikipedia section` (`wikipedia_section`) — retrieve exactly that revision-pinned section;
+5. `wikipedia links` (`wikipedia_links`) — paginate main-namespace links for controlled follow-up.
 
 There is no generic API/URL tool, whole-article dump, HTML, wikitext, references, categories, backlinks, images, random-page operation, Wikidata expansion, write operation, or sixth capability.
 
@@ -20,26 +20,126 @@ Pagination performs one API page per invocation and never drains continuation au
 
 The component makes zero automatic retries. It returns compact actionable errors such as `invalid_language`, `invalid_cursor`, `not_found`, `no_such_section`, `rate_limited`, `maxlag`, `timeout`, and `response_too_large` without response bodies or transport details.
 
-## Example calls
+## The `wikipedia` command word
 
-From a Dekopon shell session, follow the guided surface rather than requesting a whole article:
+The component parses its own argv with clap. `--help`, `--version`, and every usage error render inside the guest and authorize nothing. A well-formed argv becomes a proposal for one capability, spelled as that capability's input: each flag is the kebab-case form of one snake_case field (`--max-chars 1200` proposes `"max_chars": 1200`), every field is sent with its default filled in, and the proposal takes the ordinary path — constraint set, Cedar, broker HTTP. An integer outside its ceiling is a usage error naming the flag; everything else is checked in `invoke`.
 
-```sh
-cap wikipedia_search '{"query":"Ada Lovelace","language":"en","limit":3}'
-# {"results":[{"title":"Ada Lovelace",...}],"next_cursor":"CURSOR", "pagination_capped":false}
-cap wikipedia_search '{"query":"Ada Lovelace","language":"en","limit":3,"cursor":"CURSOR"}'
+```console
+$ wikipedia --help
+Bounded, read-only Wikipedia lookups
 
-cap wikipedia_page '{"title":"Ada Lovelace","language":"en","max_chars":900}'
-cap wikipedia_outline '{"title":"Ada Lovelace","language":"en","max_sections":20}'
-# {"sections":[{"index":"1","title":"Biography",...}],...}
-cap wikipedia_section '{"title":"Ada Lovelace","section_index":"1","language":"en","max_chars":3000}'
+Usage: wikipedia <COMMAND>
 
-cap wikipedia_links '{"title":"Ada Lovelace","language":"en","limit":20}'
-# {"links":[...],"next_cursor":"LINK_CURSOR","pagination_capped":false}
-cap wikipedia_links '{"title":"Ada Lovelace","language":"en","limit":20,"cursor":"LINK_CURSOR"}'
+Commands:
+  search   Start here: find page titles that match a phrase
+  page     Read one page's compact lead, by an exact title from search
+  outline  List one page's sections, each with an index for section
+  section  Read exactly one section of a page, by an index copied from outline
+  links    List a page's article links, one bounded page at a time
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Start with search, read a lead with page, and go deeper with outline, then section:
+  wikipedia search Ada Lovelace
+  wikipedia page --title "Ada Lovelace"
+  wikipedia outline --title "Ada Lovelace"
+  wikipedia section --title "Ada Lovelace" --section-index 1
 ```
 
-Keep query/title, language, and limit identical when copying `next_cursor` into the next search or links call. Copy one `sections[].index` value from a fresh outline into `section_index`. `language` defaults to `en` and is checked against a dated, checked-in list of active Wikipedia editions.
+`search` takes its phrase as operands, so quoting is optional. Every other verb takes `--title`, copied from an earlier result.
+
+```sh
+wikipedia search Ada Lovelace --limit 3
+# {"results":[{"title":"Ada Lovelace",...}],"next_cursor":"CURSOR","pagination_capped":false}
+wikipedia search Ada Lovelace --limit 3 --cursor CURSOR
+
+wikipedia page --title "Ada Lovelace" --max-chars 1200
+```
+
+Outline, then section: copy one `sections[].index` from a fresh outline into `--section-index`, unchanged. It is a string on the wire, and `section` checks it against the page's current revision before reading that section from the same revision.
+
+```sh
+wikipedia outline --title "Ada Lovelace" --max-sections 20
+# {"sections":[{"index":"1","title":"Biography",...}],...}
+wikipedia section --title "Ada Lovelace" --section-index 1 --max-chars 3000
+```
+
+Links paginate like search:
+
+```sh
+wikipedia links --title "Ada Lovelace"
+# {"links":[...],"next_cursor":"LINK_CURSOR","pagination_capped":false}
+wikipedia links --title "Ada Lovelace" --cursor LINK_CURSOR
+```
+
+Keep the query or title, `--language`, and `--limit` identical when passing `next_cursor` to the next call. `--language` defaults to `en` and is checked against a dated, checked-in list of active Wikipedia editions.
+
+Each verb's page:
+
+```console
+$ wikipedia search --help
+Start here: find page titles that match a phrase
+
+Usage: wikipedia search [OPTIONS] <QUERY>...
+
+Arguments:
+  <QUERY>...  What to look for; several words are joined with single spaces
+
+Options:
+      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
+      --limit <N>        Most titles to return, 1 to 10 [default: 5]
+      --cursor <CURSOR>  The next_cursor of the previous identical search, unchanged
+  -h, --help             Print help
+
+$ wikipedia page --help
+Read one page's compact lead, by an exact title from search
+
+Usage: wikipedia page [OPTIONS] --title <TITLE>
+
+Options:
+      --title <TITLE>    The exact title, as search returned it
+      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
+      --max-chars <N>    Most characters of lead text, 1 to 1200 [default: 900]
+  -h, --help             Print help
+
+$ wikipedia outline --help
+List one page's sections, each with an index for section
+
+Usage: wikipedia outline [OPTIONS] --title <TITLE>
+
+Options:
+      --title <TITLE>     The page's title, from search or page
+      --language <CODE>   Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
+      --max-sections <N>  Most sections to list, 1 to 60 [default: 30]
+  -h, --help              Print help
+
+$ wikipedia section --help
+Read exactly one section of a page, by an index copied from outline
+
+Usage: wikipedia section [OPTIONS] --title <TITLE> --section-index <INDEX>
+
+Options:
+      --title <TITLE>          The title outline was run with
+      --section-index <INDEX>  One sections[].index from outline, copied unchanged
+      --language <CODE>        Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
+      --max-chars <N>          Most characters of section text, 1 to 8000 [default: 3000]
+  -h, --help                   Print help
+
+$ wikipedia links --help
+List a page's article links, one bounded page at a time
+
+Usage: wikipedia links [OPTIONS] --title <TITLE>
+
+Options:
+      --title <TITLE>    The page whose article links to list
+      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
+      --limit <N>        Most links to return, 1 to 20 [default: 20]
+      --cursor <CURSOR>  The next_cursor of the previous identical links call, unchanged
+  -h, --help             Print help
+```
 
 ## Install and broker configuration
 
@@ -106,7 +206,7 @@ constraintSets:
         allowPlaintextLoopback: false
 ```
 
-Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools.
+Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools. Constraint sets and Cedar stay per capability: `wikipedia section …` authorizes as `wikipedia_section`.
 
 HTTP imports are linked only by the broker. Nothing else links them, so the component is inert outside a broker that supplies `dekopon:http/client`.
 

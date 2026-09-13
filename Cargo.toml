@@ -2,7 +2,7 @@
 
 [package]
 name = "dekopon-mediawiki-provider"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 [dependencies]
 base64 = "=0.22.1"
 dekopon-provider-http = "=0.13.0"
-dekopon-provider-sdk = "=0.13.0"
+dekopon-provider-sdk = { version = "=0.13.0", features = ["clap"] }
 ego-tree = "=0.11.0"
 form_urlencoded = "=1.2.2"
 scraper = { version = "=0.27.0", default-features = false }

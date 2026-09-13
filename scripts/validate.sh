@@ -79,7 +79,7 @@ wasm-tools component wit -j "$component" >target/validation/component-wit.json
 jq -e '
   (.worlds | length) == 1 and
   (.worlds[0].imports | length) == 1 and
-  ((.worlds[0].exports | keys | sort) == ["describe", "invoke"]) and
+  ((.worlds[0].exports | keys | sort) == ["describe", "invoke", "run-command"]) and
   (.interfaces | length) == 1 and
   (.interfaces[0].name == "client") and
   ((.interfaces[0].functions | keys) == ["send"]) and

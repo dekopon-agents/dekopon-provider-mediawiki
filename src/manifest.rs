@@ -8,6 +8,7 @@ use crate::input::{
     DEFAULT_SECTION_CHARS, MAX_CURSOR_BYTES, MAX_LINK_LIMIT, MAX_OUTLINE_SECTIONS, MAX_PAGE_CHARS,
     MAX_SEARCH_LIMIT, MAX_SECTION_CHARS, MAX_TITLE_BYTES,
 };
+use crate::{COMMAND_WORD, LINKS, OUTLINE, PAGE, SEARCH, SECTION};
 
 pub(crate) fn manifest() -> ProviderManifest {
     ProviderManifest {
@@ -15,10 +16,10 @@ pub(crate) fn manifest() -> ProviderManifest {
         id: "mediawiki".parse().expect("static provider ID is valid"),
         description: "Five bounded read-only Wikipedia tools guiding search to a compact lead, outline, one section, and controlled links"
             .to_owned(),
-        command_words: Vec::new(),
+        command_words: vec![COMMAND_WORD.to_owned()],
         capabilities: vec![
             read(
-                "wikipedia_search",
+                SEARCH,
                 "Start here: find bounded Wikipedia page candidates, then pass one exact title to wikipedia_page for a compact overview",
                 object_schema(
                     json!({
@@ -42,7 +43,7 @@ pub(crate) fn manifest() -> ProviderManifest {
                 ),
             ),
             read(
-                "wikipedia_page",
+                PAGE,
                 "After search, read one compact canonical lead and identity; use wikipedia_outline for detail instead of requesting a whole article",
                 object_schema(
                     json!({
@@ -60,7 +61,7 @@ pub(crate) fn manifest() -> ProviderManifest {
                 ),
             ),
             read(
-                "wikipedia_outline",
+                OUTLINE,
                 "List a page's bounded table of contents; choose one returned index and pass it unchanged to wikipedia_section",
                 object_schema(
                     json!({
@@ -78,7 +79,7 @@ pub(crate) fn manifest() -> ProviderManifest {
                 ),
             ),
             read(
-                "wikipedia_section",
+                SECTION,
                 "Retrieve exactly one bounded section selected from wikipedia_outline and pinned to the resolved revision; never dumps a whole article",
                 object_schema(
                     json!({
@@ -102,7 +103,7 @@ pub(crate) fn manifest() -> ProviderManifest {
                 ),
             ),
             read(
-                "wikipedia_links",
+                LINKS,
                 "After reading a page, list one bounded page of main-namespace links for controlled follow-up; search or inspect selected links rather than spidering blindly",
                 object_schema(
                     json!({
@@ -181,7 +182,7 @@ mod tests {
     fn manifest_has_exactly_the_approved_guided_surface() {
         let manifest = manifest();
         assert_eq!(manifest.id.as_str(), "mediawiki");
-        assert!(manifest.command_words.is_empty());
+        assert_eq!(manifest.command_words, ["wikipedia"]);
         assert_eq!(
             manifest
                 .capabilities
