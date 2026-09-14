@@ -42,15 +42,13 @@ cargo test --locked --package dekopon-mediawiki-provider
 cargo clippy --all-targets --locked --package dekopon-mediawiki-provider -- -D warnings
 cargo check --locked --package dekopon-mediawiki-provider --target wasm32-unknown-unknown
 cargo clippy --locked --package dekopon-mediawiki-provider --target wasm32-unknown-unknown --lib -- -D warnings
-./build.sh
+../provider-workflows/build.sh
 wasm-tools validate mediawiki-provider.wasm
 wasm-tools component wit mediawiki-provider.wasm
 actionlint -no-color
-shellcheck build.sh scripts/validate.sh
-./scripts/validate.sh
 ```
 
-`scripts/validate.sh` is the shared local/CI/release gate. CI adds independent-checkout reproducibility, dependency bans, mirrored-WIT equality, component import/export inspection, path scans, and artifact upload. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates or strictly reuses a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. Build, attestation, draft, GHCR, and finalization are separate artifact-linked jobs with only their required permissions. These are implemented checks, not a claim that a release has run.
+The shared `ci / validate` workflow in [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) is now the local/CI/release gate, replacing `scripts/validate.sh`: independent-checkout reproducibility, dependency bans (`cargo deny`), mirrored-WIT equality, component import/export inspection, path scans, and artifact upload. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates or strictly reuses a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. Build, attestation, draft, GHCR, and finalization are separate artifact-linked jobs with only their required permissions. These are implemented checks, not a claim that a release has run.
 
 ## Bounded review and repair — 2026-08-22
 

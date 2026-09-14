@@ -219,11 +219,10 @@ rustup toolchain install 1.98.1 --profile minimal --component clippy --component
 rustup target add wasm32-unknown-unknown --toolchain 1.98.1
 rustup run 1.98.1 cargo install wasm-tools --version 1.259.0 --locked
 cargo test --locked --package dekopon-mediawiki-provider
-./scripts/validate.sh
-./build.sh
+WASM_TOOLS_VERSION=1.259.0 ../provider-workflows/build.sh
 ```
 
-`build.sh` preserves the proven Dekopon deterministic metadata normalization, source/Cargo/sysroot path remapping, and path scan. It uses the checkout's ordinary `target/` and never redirects Cargo to a shared build directory. CI proves reproducibility from two independent checkouts with separate default targets.
+The shared [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) repository owns `build.sh` (checked out next to this repository) with the proven deterministic metadata normalization, source/Cargo/sysroot path remapping, and path scan; it uses the checkout's ordinary `target/` and never redirects Cargo to a shared build directory. The shared `ci / validate` gate runs formatting, clippy, `cargo deny`, and reproducibility from two independent checkouts; the shared release workflow builds, attests, and publishes on a `v*` tag.
 
 ## Manual broker smoke checklist
 
