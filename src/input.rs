@@ -1,5 +1,6 @@
-use dekopon_provider_sdk::ProviderError;
-use serde::Deserialize;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error;
@@ -375,58 +376,94 @@ pub(crate) const ACTIVE_WIKIPEDIA_LANGUAGES: &[&str] = &[
     "zu",
 ];
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SearchInput {
+pub struct SearchInput {
+    /// Search phrase: 1–256 non-control characters; insource: is forbidden, with no raw query passthrough.
+    #[schemars(length(min = 1, max = 256))]
     pub(crate) query: String,
+    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
+    /// Maximum candidates from one API page.
     #[serde(default = "default_search_limit")]
+    #[schemars(range(min = 1, max = 10))]
     pub(crate) limit: usize,
-    #[serde(default)]
+    /// Copy the cursor from the preceding identical `wikipedia search` unchanged; do not edit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 2048))]
     pub(crate) cursor: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PageInput {
+pub struct PageInput {
+    /// Exact title from `wikipedia search`; Wikipedia resolves redirects only on its own origin.
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
+    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
+    /// Maximum Unicode characters in the compact lead.
     #[serde(default = "default_page_chars")]
+    #[schemars(range(min = 1, max = 1200))]
     pub(crate) max_chars: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OutlineInput {
+pub struct OutlineInput {
+    /// Canonical or redirecting Wikipedia title from search or page.
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
+    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
+    /// Maximum sections; continuation is never drained automatically.
     #[serde(default = "default_outline_sections")]
+    #[schemars(range(min = 1, max = 60))]
     pub(crate) max_sections: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SectionInput {
+pub struct SectionInput {
+    /// The title used for `wikipedia outline`.
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
+    /// Copy the index exactly from `wikipedia outline`; headings are not selectors.
+    #[schemars(length(min = 1, max = 32))]
     pub(crate) section_index: String,
+    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
+    /// Maximum Unicode characters in the selected section plaintext.
     #[serde(default = "default_section_chars")]
+    #[schemars(range(min = 1, max = 8000))]
     pub(crate) max_chars: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct LinksInput {
+pub struct LinksInput {
+    /// Canonical or redirecting title of the page whose article links are listed.
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
+    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
+    /// Maximum main-namespace links returned from one API page.
     #[serde(default = "default_link_limit")]
+    #[schemars(range(min = 1, max = 20))]
     pub(crate) limit: usize,
-    #[serde(default)]
+    /// Copy the cursor from the preceding identical `wikipedia links` unchanged; do not edit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 2048))]
     pub(crate) cursor: Option<String>,
 }
 

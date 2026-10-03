@@ -5,13 +5,15 @@ This document extracts provider-design lessons from the MediaWiki implementation
 ## Decisions that mattered
 
 - **Start from authority, not an API client.** Five read-only capabilities form a guided path: search → compact lead → outline → one section → links. There is no generic URL/API/wikitext escape hatch and no sixth convenience tool.
-- **Use the current component contract.** The provider includes `dekopon:provider/provider-cli@0.3.0`, imports only `dekopon:http/client@1.0.0`, and uses `export_provider_with_cli!`, so its `wikipedia` command word parses argv inside the guest and proposes exactly the input `invoke` accepts. HTTP providers must be exercised through `dekopon-brokerd`; the import-free direct runner is intentionally the wrong host.
+- **Use the current component contract.** The migrated provider uses the typed SDK, imports `dekopon:stdio/streams@0.1.0` and `dekopon:http/client@1.2.0` (with the SDK's asset interface), and exports through `export!`; the `wikipedia` word proposes a typed input before authorization. HTTP providers must be exercised through `dekopon-brokerd`; the import-free direct runner is intentionally the wrong host.
 - **Treat schemas as prompt metadata, not enforcement.** Every request is separately deserialized with `deny_unknown_fields`, then checked for semantic, scalar-count, UTF-8-byte, and allowlist bounds before the first host call.
 - **Make destination choice non-input.** A reviewed SiteMatrix snapshot supplies language labels. The implementation constructs HTTPS/443 Wikipedia Action API origins and accepts no URL, host, scheme, port, project, IP, credential, environment variable, or runtime configuration.
-- **Pin page identity and namespace before parsing.** `wikipedia_outline` first resolves a main-namespace page and revision with `action=query`, then parses sections by `oldid`. `wikipedia_section` adds one final `oldid`/index fetch. The two- and three-call sequences prevent namespace bypass and revision races.
-- **Budget serialized data, not characters alone.** Four-byte Unicode and JSON escaping make character limits insufficient. Field caps feed a 14,000-byte projected-output check and an actual 16,384-byte SDK-envelope check.
+- **Pin page identity and namespace before parsing.** `mediawiki.outline` first resolves a main-namespace page and revision with `action=query`, then parses sections by `oldid`. `mediawiki.section` adds one final `oldid`/index fetch. The two- and three-call sequences prevent namespace bypass and revision races.
+- **Budget serialized data, not characters alone.** Four-byte Unicode and JSON escaping make character limits insufficient. Field caps feed a 14,000-byte projected-JSON check before writing to stdout.
 
 ## SDK, WIT, and HTTP lessons
+
+The numbered lessons below record the original authoring epoch; the current typed SDK has no WIT mirror or `dekopon-provider-http` pin. The checked component's stdio and HTTP imports are verified by the SDK testkit.
 
 1. `ProviderManifest` in SDK `0.10.0` still contains `command_words`; base-only providers set it to an empty vector and export with `export_provider_with_bindings!`, not the command macro.
 2. A caller-generated WIT world is the composition point for privileged imports. Including the provider world does not grant HTTP; the broker links it only after authorization.
@@ -48,7 +50,7 @@ wasm-tools component wit mediawiki-provider.wasm
 actionlint -no-color
 ```
 
-The shared `ci / validate` workflow in [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) is now the local/CI/release gate, replacing `scripts/validate.sh`: independent-checkout reproducibility, dependency bans (`cargo deny`), mirrored-WIT equality, component import/export inspection, path scans, and artifact upload. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates or strictly reuses a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. Build, attestation, draft, GHCR, and finalization are separate artifact-linked jobs with only their required permissions. These are implemented checks, not a claim that a release has run.
+The shared `ci / validate` workflow in [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) is the local/CI/release gate: independent-checkout reproducibility, dependency bans (`cargo deny`), component inspection, path scans, and artifact upload. The former mirrored-WIT comparison was retired with the typed SDK. Release accepts strict stable semantic-version tags only, requires an annotated tag matching `Cargo.toml` and contained in `main`, creates or strictly reuses a draft with exactly two assets, publishes the same Wasm bytes to GHCR, and finalizes only after all prior steps succeed. Build, attestation, draft, GHCR, and finalization are separate artifact-linked jobs with only their required permissions. These are implemented checks, not a claim that a release has run.
 
 ## Bounded review and repair — 2026-08-22
 

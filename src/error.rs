@@ -1,5 +1,56 @@
-use dekopon_provider_http::{HttpError, HttpErrorCode};
-use dekopon_provider_sdk::ProviderError;
+use dekopon_provider_sdk::provider::{Code, Failure, HttpError, HttpErrorCode};
+
+#[derive(Debug)]
+pub struct ProviderError {
+    code: &'static str,
+    message: &'static str,
+}
+
+impl ProviderError {
+    pub(crate) const fn new(code: &'static str, message: &'static str) -> Self {
+        Self { code, message }
+    }
+    #[cfg(test)]
+    pub(crate) const fn code(&self) -> &'static str {
+        self.code
+    }
+    #[cfg(test)]
+    pub(crate) const fn message(&self) -> &'static str {
+        self.message
+    }
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message)
+    }
+}
+
+impl Failure for ProviderError {
+    fn code(&self) -> Code {
+        // The old guest used snake_case errors. The typed SDK's codes are kebab-case.
+        match self.code {
+            "invalid_input" => Code::INVALID_INPUT,
+            "invalid_language" => Code::new("invalid-language"),
+            "invalid_query" => Code::new("invalid-query"),
+            "invalid_cursor" => Code::new("invalid-cursor"),
+            "invalid_title" => Code::new("invalid-title"),
+            "not_found" => Code::new("not-found"),
+            "no_such_section" => Code::new("no-such-section"),
+            "parse_failed" => Code::new("parse-failed"),
+            "rate_limited" => Code::new("rate-limited"),
+            "maxlag" => Code::new("maxlag"),
+            "timeout" => Code::new("timeout"),
+            "response_too_large" => Code::new("response-too-large"),
+            "output_closed" => Code::new("output-closed").exiting(141),
+            _ => Code::new("upstream-error"),
+        }
+    }
+}
+
+pub(crate) fn output_closed() -> ProviderError {
+    ProviderError::new("output_closed", "wikipedia: stdout reader closed")
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Operation {
@@ -108,6 +159,7 @@ pub(crate) fn upstream_error() -> ProviderError {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn unknown_capability() -> ProviderError {
     ProviderError::new(
         "invalid_input",
@@ -167,7 +219,7 @@ pub(crate) fn api(code: &str, operation: Operation, had_cursor: bool) -> Provide
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_http::{HttpError, HttpErrorCode};
+    use dekopon_provider_sdk::provider::{HttpError, HttpErrorCode};
 
     use super::{
         Operation, api, invalid_cursor, invalid_input, invalid_language, invalid_query,
