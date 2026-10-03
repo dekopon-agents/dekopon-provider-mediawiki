@@ -4,21 +4,21 @@ A standalone WebAssembly component giving [Dekopon](https://github.com/dekopon-a
 
 The path is intentionally small and sequential:
 
-1. `wikipedia search` (`wikipedia_search`) — find candidate titles;
-2. `wikipedia page` (`wikipedia_page`) — read a compact canonical lead and identity;
-3. `wikipedia outline` (`wikipedia_outline`) — choose a section index;
-4. `wikipedia section` (`wikipedia_section`) — retrieve exactly that revision-pinned section;
-5. `wikipedia links` (`wikipedia_links`) — paginate main-namespace links for controlled follow-up.
+1. `wikipedia search` (`mediawiki.search`) — find candidate titles;
+2. `wikipedia page` (`mediawiki.page`) — read a compact canonical lead and identity;
+3. `wikipedia outline` (`mediawiki.outline`) — choose a section index;
+4. `wikipedia section` (`mediawiki.section`) — retrieve exactly that revision-pinned section;
+5. `wikipedia links` (`mediawiki.links`) — paginate main-namespace links for controlled follow-up.
 
 There is no generic API/URL tool, whole-article dump, HTML, wikitext, references, categories, backlinks, images, random-page operation, Wikidata expansion, write operation, or sixth capability.
 
 ## Context safety
 
-Inputs and outputs are bounded in native code, not only JSON Schema. Search returns at most 10 results; leads at most 1,200 characters; outlines at most 60 entries; one section at most 8,000 characters; and links at most 20 entries from one API page. The 20-link cap is proven against 255-byte fully JSON-escaped titles plus a full 2 KiB cursor. Snippets and HTML-derived text are DOM-decoded plaintext with iterative node/depth limits. Math is projected from bounded TeX or formula alt text without fetching resources; an unavailable formula becomes `[formula omitted]` and marks truncation where the output supports it. Upstream bodies stop at 1 MiB, projected JSON stays below 14,000 bytes, and the measured SDK envelope stays at or below 16,384 bytes, including four-byte Unicode and JSON escaping.
+Inputs and outputs are bounded in native code, not only JSON Schema. Search returns at most 10 results; leads at most 1,200 characters; outlines at most 60 entries; one section at most 8,000 characters; and links at most 20 entries from one API page. The 20-link cap is proven against 255-byte fully JSON-escaped titles plus a full 2 KiB cursor. Snippets and HTML-derived text are DOM-decoded plaintext with iterative node/depth limits. Math is projected from bounded TeX or formula alt text without fetching resources; an unavailable formula becomes `[formula omitted]` and marks truncation where the output supports it. Upstream bodies stop at 1 MiB, projected JSON stays below 14,000 bytes, and streamed stdout remains below 16,384 bytes, including four-byte Unicode and JSON escaping.
 
 Pagination performs one API page per invocation and never drains continuation automatically. Opaque cursors are request-bound, at most 2 KiB, and stop after ten continuation depths. `pagination_capped: true` with `next_cursor: null` means Wikipedia still advertised another page but the provider depth cap stopped traversal; `false` with a null cursor means natural exhaustion. Cursors are deliberately **not** claimed to be authenticated or expiring: the current guest ABI supplies no host key or clock.
 
-The component makes zero automatic retries. It returns compact actionable errors such as `invalid_language`, `invalid_cursor`, `not_found`, `no_such_section`, `rate_limited`, `maxlag`, `timeout`, and `response_too_large` without response bodies or transport details.
+The component makes zero automatic retries. It returns compact actionable errors such as `invalid-language`, `invalid-cursor`, `not-found`, `no-such-section`, `rate-limited`, `maxlag`, `timeout`, and `response-too-large` without response bodies or transport details.
 
 ## The `wikipedia` command word
 
@@ -152,7 +152,7 @@ providers:
   - /opt/dekopon/providers/mediawiki-provider.wasm
 
 constraintSets:
-  wikipedia_search:
+  mediawiki.search:
     provider: mediawiki
     effect: read-only
     risk: Low
@@ -166,12 +166,12 @@ constraintSets:
         maxRequestBytes: 16384
         maxResponseBytes: 1048576
         allowPlaintextLoopback: false
-  wikipedia_page:
+  mediawiki.page:
     provider: mediawiki
     effect: read-only
     risk: Low
     constraints: *wikipediaOneRequest
-  wikipedia_outline:
+  mediawiki.outline:
     provider: mediawiki
     effect: read-only
     risk: Low
@@ -185,12 +185,12 @@ constraintSets:
         maxRequestBytes: 16384
         maxResponseBytes: 1048576
         allowPlaintextLoopback: false
-  wikipedia_links:
+  mediawiki.links:
     provider: mediawiki
     effect: read-only
     risk: Low
     constraints: *wikipediaOneRequest
-  wikipedia_section:
+  mediawiki.section:
     provider: mediawiki
     effect: read-only
     risk: Low
@@ -206,7 +206,7 @@ constraintSets:
         allowPlaintextLoopback: false
 ```
 
-Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools. Constraint sets and Cedar stay per capability: `wikipedia section …` authorizes as `wikipedia_section`.
+Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools. Constraint sets and Cedar stay per capability: `wikipedia section …` authorizes as `mediawiki.section`.
 
 HTTP imports are linked only by the broker. Nothing else links them, so the component is inert outside a broker that supplies `dekopon:http/client`.
 

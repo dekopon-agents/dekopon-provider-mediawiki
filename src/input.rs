@@ -1,5 +1,6 @@
-use dekopon_provider_sdk::ProviderError;
-use serde::Deserialize;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error;
@@ -375,58 +376,76 @@ pub(crate) const ACTIVE_WIKIPEDIA_LANGUAGES: &[&str] = &[
     "zu",
 ];
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SearchInput {
+pub struct SearchInput {
+    #[schemars(length(min = 1, max = 256))]
     pub(crate) query: String,
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
     #[serde(default = "default_search_limit")]
+    #[schemars(range(min = 1, max = 10))]
     pub(crate) limit: usize,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 2048))]
     pub(crate) cursor: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PageInput {
+pub struct PageInput {
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
     #[serde(default = "default_page_chars")]
+    #[schemars(range(min = 1, max = 1200))]
     pub(crate) max_chars: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OutlineInput {
+pub struct OutlineInput {
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
     #[serde(default = "default_outline_sections")]
+    #[schemars(range(min = 1, max = 60))]
     pub(crate) max_sections: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SectionInput {
+pub struct SectionInput {
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
+    #[schemars(length(min = 1, max = 32))]
     pub(crate) section_index: String,
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
     #[serde(default = "default_section_chars")]
+    #[schemars(range(min = 1, max = 8000))]
     pub(crate) max_chars: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct LinksInput {
+pub struct LinksInput {
+    #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
     #[serde(default = "default_language")]
+    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
     pub(crate) language: String,
     #[serde(default = "default_link_limit")]
+    #[schemars(range(min = 1, max = 20))]
     pub(crate) limit: usize,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(length(max = 2048))]
     pub(crate) cursor: Option<String>,
 }
 

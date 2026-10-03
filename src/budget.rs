@@ -1,10 +1,11 @@
-use dekopon_provider_sdk::{ComponentResponse, ProviderError};
+use crate::error::ProviderError;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::error;
 
 pub(crate) const MAX_PROJECTED_OUTPUT_BYTES: usize = 14_000;
+#[cfg(test)]
 pub(crate) const MAX_SDK_ENVELOPE_BYTES: usize = 16_384;
 
 /// Collapses all whitespace into single ASCII spaces and removes leading/trailing space.
@@ -64,16 +65,10 @@ pub(crate) fn projected_fits<T: Serialize>(value: &T) -> bool {
     serialized_len(value).is_ok_and(|length| length <= MAX_PROJECTED_OUTPUT_BYTES)
 }
 
-/// Converts a typed projection to JSON and checks the exact SDK success envelope size.
+/// Converts a typed projection to JSON and checks the exact stdout payload size.
 pub(crate) fn finish<T: Serialize>(output: &T) -> Result<Value, ProviderError> {
     let output = serde_json::to_value(output).map_err(|_| error::upstream_error())?;
     if serialized_len(&output)? > MAX_PROJECTED_OUTPUT_BYTES {
-        return Err(error::response_too_large());
-    }
-    let envelope = ComponentResponse::Succeeded {
-        output: output.clone(),
-    };
-    if serialized_len(&envelope)? > MAX_SDK_ENVELOPE_BYTES {
         return Err(error::response_too_large());
     }
     Ok(output)
@@ -121,8 +116,7 @@ mod tests {
         let projected = Text { text: &escaping };
         assert!(serialized_len(&projected).expect("serializes") < MAX_PROJECTED_OUTPUT_BYTES);
         let value = finish(&projected).expect("bounded output succeeds");
-        let envelope = dekopon_provider_sdk::ComponentResponse::Succeeded { output: value };
-        assert!(serialized_len(&envelope).expect("serializes") <= MAX_SDK_ENVELOPE_BYTES);
+        assert!(serialized_len(&value).expect("serializes") <= MAX_SDK_ENVELOPE_BYTES);
 
         let oversized = Text {
             text: &"😀".repeat(4_000),

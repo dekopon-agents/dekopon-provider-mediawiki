@@ -13,8 +13,8 @@
 //! shapes — is still checked once, in `invoke`, against the input a direct call would send too.
 
 use dekopon_provider_sdk::clap::builder::RangedU64ValueParser;
-use dekopon_provider_sdk::clap::{self, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use dekopon_provider_sdk::{CommandInvocation, CommandRun, ProviderError, cli};
+use dekopon_provider_sdk::clap::{Args, Parser, Subcommand};
+use dekopon_provider_sdk::provider::{Proposal, Usage};
 use serde_json::{Value, json};
 
 use crate::input::{
@@ -22,7 +22,11 @@ use crate::input::{
     DEFAULT_SEARCH_LIMIT, DEFAULT_SECTION_CHARS, MAX_LINK_LIMIT, MAX_OUTLINE_SECTIONS,
     MAX_PAGE_CHARS, MAX_SEARCH_LIMIT, MAX_SECTION_CHARS,
 };
-use crate::{COMMAND_WORD, LINKS, OUTLINE, PAGE, SEARCH, SECTION};
+use crate::{
+    Links as LinksCapability, MediaWiki, Outline as OutlineCapability, Page as PageCapability,
+    Search as SearchCapability, Section as SectionCapability,
+};
+const COMMAND_WORD: &str = "wikipedia";
 
 /// The guided path, printed under the top-level help.
 const FLOW: &str = "\
@@ -41,7 +45,7 @@ Start with search, read a lead with page, and go deeper with outline, then secti
     about = "Bounded, read-only Wikipedia lookups",
     after_help = FLOW
 )]
-struct Wikipedia {
+pub struct Wikipedia {
     #[command(subcommand)]
     verb: Verb,
 }
@@ -149,24 +153,14 @@ fn from_one_to(max: usize) -> RangedU64ValueParser<usize> {
     RangedU64ValueParser::new().range(1..=max as u64)
 }
 
-/// Runs one `wikipedia` argv.
-pub(crate) fn run(argv: &[String], stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
-    cli::run_command(Wikipedia::command(), argv, stdin, dispatch)
-}
-
-/// Turns clap's matches into the proposal for the selected verb, spelled as `invoke`'s input.
-///
-/// Every field is sent with its default filled in, so the proposal on a trace is the complete
-/// request. No verb reads piped input.
-fn dispatch(
-    matches: clap::ArgMatches,
-    _stdin: Option<&str>,
-) -> Result<CommandInvocation, ProviderError> {
-    let wikipedia = Wikipedia::from_arg_matches(&matches)
-        .map_err(|error| ProviderError::new("usage", error.to_string()))?;
-    let (capability, input) = match wikipedia.verb {
+/// Pure proposal: no verb reads piped input, including an empty pipe.
+pub(crate) fn propose(
+    wikipedia: Wikipedia,
+    _stdin_piped: bool,
+) -> Result<Proposal<MediaWiki>, Usage> {
+    let (name, input) = match wikipedia.verb {
         Verb::Search(search) => (
-            SEARCH,
+            "search",
             with_cursor(
                 json!({
                     "query": search.query.join(" "),
@@ -177,7 +171,7 @@ fn dispatch(
             ),
         ),
         Verb::Page(page) => (
-            PAGE,
+            "page",
             json!({
                 "title": page.title,
                 "language": page.edition.language,
@@ -185,7 +179,7 @@ fn dispatch(
             }),
         ),
         Verb::Outline(outline) => (
-            OUTLINE,
+            "outline",
             json!({
                 "title": outline.title,
                 "language": outline.edition.language,
@@ -193,7 +187,7 @@ fn dispatch(
             }),
         ),
         Verb::Section(section) => (
-            SECTION,
+            "section",
             json!({
                 "title": section.title,
                 "section_index": section.section_index,
@@ -202,7 +196,7 @@ fn dispatch(
             }),
         ),
         Verb::Links(links) => (
-            LINKS,
+            "links",
             with_cursor(
                 json!({
                     "title": links.title,
@@ -213,10 +207,23 @@ fn dispatch(
             ),
         ),
     };
-    Ok(CommandInvocation {
-        capability: capability.parse().expect("static capability ID"),
-        input,
-        secret_use: None,
+    Ok(match name {
+        "search" => Proposal::to::<SearchCapability>(
+            serde_json::from_value(input).expect("valid clap search"),
+        ),
+        "page" => {
+            Proposal::to::<PageCapability>(serde_json::from_value(input).expect("valid clap page"))
+        }
+        "outline" => Proposal::to::<OutlineCapability>(
+            serde_json::from_value(input).expect("valid clap outline"),
+        ),
+        "section" => Proposal::to::<SectionCapability>(
+            serde_json::from_value(input).expect("valid clap section"),
+        ),
+        "links" => Proposal::to::<LinksCapability>(
+            serde_json::from_value(input).expect("valid clap links"),
+        ),
+        _ => unreachable!("fixed command grammar"),
     })
 }
 
@@ -231,11 +238,47 @@ fn with_cursor(mut input: Value, cursor: Option<String>) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_http::Response;
-    use dekopon_provider_sdk::{CommandInvocation, CommandRun, Provider};
+    use crate::error::ProviderError;
+    use dekopon_provider_sdk::CommandRunOutcome;
+    use dekopon_provider_sdk::provider::{self, Response};
+    use serde_json::Value as JsonValue;
+
+    #[derive(Debug)]
+    struct CommandInvocation {
+        capability: dekopon_provider_sdk::CapabilityId,
+        input: JsonValue,
+    }
+    #[derive(Debug)]
+    enum CommandRun {
+        Proposal(CommandInvocation),
+        Rendered {
+            stdout: String,
+            stderr: String,
+            status: u8,
+        },
+    }
+    fn run(argv: &[String], _stdin: Option<&str>) -> Result<CommandRun, ProviderError> {
+        match provider::command::<crate::MediaWiki>(argv, false) {
+            CommandRunOutcome::Proposed {
+                capability, input, ..
+            } => Ok(CommandRun::Proposal(CommandInvocation {
+                capability,
+                input,
+            })),
+            CommandRunOutcome::Rendered {
+                stdout,
+                stderr,
+                status,
+            } => Ok(CommandRun::Rendered {
+                stdout,
+                stderr,
+                status,
+            }),
+            other => panic!("unexpected command outcome: {other:?}"),
+        }
+    }
     use serde_json::{Value, json};
 
-    use super::run;
     use crate::input::{
         MAX_LINK_LIMIT, MAX_OUTLINE_SECTIONS, MAX_PAGE_CHARS, MAX_SEARCH_LIMIT, MAX_SECTION_CHARS,
     };
@@ -617,7 +660,7 @@ Options:
     /// a renamed capability would reach a model at runtime as an authorization denial.
     #[test]
     fn every_dispatch_target_is_declared_in_the_manifest() {
-        let manifest = MediaWiki::manifest();
+        let manifest = provider::manifest::<MediaWiki>().expect("valid manifest");
         let declared: Vec<&str> = manifest
             .capabilities
             .iter()

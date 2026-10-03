@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use dekopon_provider_http::{Header, HttpError, Request, Response, method};
-use dekopon_provider_sdk::ProviderError;
+use crate::error::ProviderError;
+use dekopon_provider_sdk::provider::{Header, HttpError, Request, Response, method};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -946,7 +946,7 @@ struct Link {
 
 #[cfg(test)]
 mod tests {
-    use dekopon_provider_http::{HttpError, HttpErrorCode, Request, Response};
+    use dekopon_provider_sdk::provider::{HttpError, HttpErrorCode, Request, Response};
     use serde_json::{Value, json};
 
     use crate::{
@@ -1321,10 +1321,9 @@ mod tests {
         let length = crate::budget::serialized_len(&output).expect("projection serializes");
         assert_eq!(length, 13_074);
         let value = crate::budget::finish(&output).expect("worst-case links fit the SDK envelope");
-        let envelope = dekopon_provider_sdk::ComponentResponse::Succeeded { output: value };
         assert_eq!(
-            crate::budget::serialized_len(&envelope).expect("envelope serializes"),
-            13_107
+            crate::budget::serialized_len(&value).expect("output serializes"),
+            13_074
         );
     }
 
@@ -1444,8 +1443,7 @@ mod tests {
             |_| response(body.clone()),
         )
         .expect("bounded projection succeeds");
-        let envelope = dekopon_provider_sdk::ComponentResponse::Succeeded { output };
-        let bytes = serde_json::to_vec(&envelope).expect("envelope serializes");
+        let bytes = serde_json::to_vec(&output).expect("output serializes");
         assert!(bytes.len() <= 16_384, "{}", bytes.len());
     }
 
