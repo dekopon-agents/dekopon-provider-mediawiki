@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.0] - 2026-10-04
+
+### Changed
+
+- Move to Dekopon SDK and testkit 0.33.0 and HTTP client 1.1.0; preserve bounded read-only Wikipedia behavior and typed stdio.
+
 ## [0.6.0] - 2026-10-03
 
 ### Changed
