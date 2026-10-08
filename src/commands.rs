@@ -9,8 +9,6 @@
 //!
 //! clap checks what an argv alone can know — a required flag, an integer inside its native
 //! ceiling — so a model gets a usage error naming the flag instead of an opaque `invalid_input`.
-//! Everything else — the language allowlist, title and query bytes, section index and cursor
-//! shapes — is still checked once, in `invoke`, against the input a direct call would send too.
 
 use dekopon_provider_sdk::clap::builder::RangedU64ValueParser;
 use dekopon_provider_sdk::clap::{Args, Parser, Subcommand};
@@ -18,9 +16,9 @@ use dekopon_provider_sdk::provider::{Proposal, Usage};
 use serde_json::{Value, json};
 
 use crate::input::{
-    DEFAULT_LANGUAGE, DEFAULT_LINK_LIMIT, DEFAULT_OUTLINE_SECTIONS, DEFAULT_PAGE_CHARS,
-    DEFAULT_SEARCH_LIMIT, DEFAULT_SECTION_CHARS, MAX_LINK_LIMIT, MAX_OUTLINE_SECTIONS,
-    MAX_PAGE_CHARS, MAX_SEARCH_LIMIT, MAX_SECTION_CHARS,
+    DEFAULT_LINK_LIMIT, DEFAULT_OUTLINE_SECTIONS, DEFAULT_PAGE_CHARS, DEFAULT_SEARCH_LIMIT,
+    DEFAULT_SECTION_CHARS, MAX_LINK_LIMIT, MAX_OUTLINE_SECTIONS, MAX_PAGE_CHARS, MAX_SEARCH_LIMIT,
+    MAX_SECTION_CHARS,
 };
 use crate::{
     Links as LinksCapability, MediaWiki, Outline as OutlineCapability, Page as PageCapability,
@@ -75,8 +73,6 @@ struct Search {
     /// What to look for; several words are joined with single spaces
     #[arg(value_name = "QUERY", required = true)]
     query: Vec<String>,
-    #[command(flatten)]
-    edition: Edition,
     /// Most titles to return, 1 to 10
     #[arg(long, value_name = "N", default_value_t = DEFAULT_SEARCH_LIMIT, value_parser = from_one_to(MAX_SEARCH_LIMIT))]
     limit: usize,
@@ -90,8 +86,6 @@ struct Page {
     /// The exact title, as search returned it
     #[arg(long, value_name = "TITLE", allow_hyphen_values = true)]
     title: String,
-    #[command(flatten)]
-    edition: Edition,
     /// Most characters of lead text, 1 to 1200
     #[arg(long, value_name = "N", default_value_t = DEFAULT_PAGE_CHARS, value_parser = from_one_to(MAX_PAGE_CHARS))]
     max_chars: usize,
@@ -102,8 +96,6 @@ struct Outline {
     /// The page's title, from search or page
     #[arg(long, value_name = "TITLE", allow_hyphen_values = true)]
     title: String,
-    #[command(flatten)]
-    edition: Edition,
     /// Most sections to list, 1 to 60
     #[arg(long, value_name = "N", default_value_t = DEFAULT_OUTLINE_SECTIONS, value_parser = from_one_to(MAX_OUTLINE_SECTIONS))]
     max_sections: usize,
@@ -119,8 +111,6 @@ struct Section {
     /// One sections[].index from outline, copied unchanged
     #[arg(long, value_name = "INDEX")]
     section_index: String,
-    #[command(flatten)]
-    edition: Edition,
     /// Most characters of section text, 1 to 8000
     #[arg(long, value_name = "N", default_value_t = DEFAULT_SECTION_CHARS, value_parser = from_one_to(MAX_SECTION_CHARS))]
     max_chars: usize,
@@ -131,21 +121,12 @@ struct Links {
     /// The page whose article links to list
     #[arg(long, value_name = "TITLE", allow_hyphen_values = true)]
     title: String,
-    #[command(flatten)]
-    edition: Edition,
     /// Most links to return, 1 to 20
     #[arg(long, value_name = "N", default_value_t = DEFAULT_LINK_LIMIT, value_parser = from_one_to(MAX_LINK_LIMIT))]
     limit: usize,
     /// The next_cursor of the previous identical links call, unchanged
     #[arg(long, value_name = "CURSOR")]
     cursor: Option<String>,
-}
-
-#[derive(Args)]
-struct Edition {
-    /// Wikipedia edition: en, de, fr, simple, or another active language code
-    #[arg(long, value_name = "CODE", default_value = DEFAULT_LANGUAGE)]
-    language: String,
 }
 
 /// An integer from 1 to `max`, the same native ceiling `invoke` enforces.
@@ -164,7 +145,6 @@ pub(crate) fn propose(
             with_cursor(
                 json!({
                     "query": search.query.join(" "),
-                    "language": search.edition.language,
                     "limit": search.limit,
                 }),
                 search.cursor,
@@ -174,7 +154,6 @@ pub(crate) fn propose(
             "page",
             json!({
                 "title": page.title,
-                "language": page.edition.language,
                 "max_chars": page.max_chars,
             }),
         ),
@@ -182,7 +161,6 @@ pub(crate) fn propose(
             "outline",
             json!({
                 "title": outline.title,
-                "language": outline.edition.language,
                 "max_sections": outline.max_sections,
             }),
         ),
@@ -191,7 +169,6 @@ pub(crate) fn propose(
             json!({
                 "title": section.title,
                 "section_index": section.section_index,
-                "language": section.edition.language,
                 "max_chars": section.max_chars,
             }),
         ),
@@ -200,7 +177,6 @@ pub(crate) fn propose(
             with_cursor(
                 json!({
                     "title": links.title,
-                    "language": links.edition.language,
                     "limit": links.limit,
                 }),
                 links.cursor,
@@ -315,7 +291,6 @@ Arguments:
   <QUERY>...  What to look for; several words are joined with single spaces
 
 Options:
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --limit <N>        Most titles to return, 1 to 10 [default: 5]
       --cursor <CURSOR>  The next_cursor of the previous identical search, unchanged
   -h, --help             Print help
@@ -326,10 +301,9 @@ Options:
 Usage: wikipedia page [OPTIONS] --title <TITLE>
 
 Options:
-      --title <TITLE>    The exact title, as search returned it
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
-      --max-chars <N>    Most characters of lead text, 1 to 1200 [default: 900]
-  -h, --help             Print help
+      --title <TITLE>  The exact title, as search returned it
+      --max-chars <N>  Most characters of lead text, 1 to 1200 [default: 900]
+  -h, --help           Print help
 ";
 
     const OUTLINE_HELP: &str = "List one page's sections, each with an index for section
@@ -338,7 +312,6 @@ Usage: wikipedia outline [OPTIONS] --title <TITLE>
 
 Options:
       --title <TITLE>     The page's title, from search or page
-      --language <CODE>   Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --max-sections <N>  Most sections to list, 1 to 60 [default: 30]
   -h, --help              Print help
 ";
@@ -350,7 +323,6 @@ Usage: wikipedia section [OPTIONS] --title <TITLE> --section-index <INDEX>
 Options:
       --title <TITLE>          The title outline was run with
       --section-index <INDEX>  One sections[].index from outline, copied unchanged
-      --language <CODE>        Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --max-chars <N>          Most characters of section text, 1 to 8000 [default: 3000]
   -h, --help                   Print help
 ";
@@ -361,7 +333,6 @@ Usage: wikipedia links [OPTIONS] --title <TITLE>
 
 Options:
       --title <TITLE>    The page whose article links to list
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --limit <N>        Most links to return, 1 to 20 [default: 20]
       --cursor <CURSOR>  The next_cursor of the previous identical links call, unchanged
   -h, --help             Print help
@@ -567,44 +538,34 @@ Options:
             (
                 &["search", "Ada", "Lovelace"],
                 SEARCH,
-                json!({"query": "Ada Lovelace", "language": "en", "limit": 5}),
+                json!({"query": "Ada Lovelace", "limit": 5}),
             ),
             (
                 &[
                     "search",
                     "Ada Lovelace",
-                    "--language",
-                    "de",
                     "--limit",
                     "10",
                     "--cursor",
                     "eyJ2IjoxfQ",
                 ],
                 SEARCH,
-                json!({"query": "Ada Lovelace", "language": "de", "limit": 10, "cursor": "eyJ2IjoxfQ"}),
+                json!({"query": "Ada Lovelace", "limit": 10, "cursor": "eyJ2IjoxfQ"}),
             ),
             (
                 &["page", "--title", "Ada Lovelace", "--max-chars", "1200"],
                 PAGE,
-                json!({"title": "Ada Lovelace", "language": "en", "max_chars": 1200}),
+                json!({"title": "Ada Lovelace", "max_chars": 1200}),
             ),
             (
                 &["page", "--title", "-ism"],
                 PAGE,
-                json!({"title": "-ism", "language": "en", "max_chars": 900}),
+                json!({"title": "-ism", "max_chars": 900}),
             ),
             (
-                &[
-                    "outline",
-                    "--title",
-                    "Ada Lovelace",
-                    "--language",
-                    "fr",
-                    "--max-sections",
-                    "60",
-                ],
+                &["outline", "--title", "Ada Lovelace", "--max-sections", "60"],
                 OUTLINE,
-                json!({"title": "Ada Lovelace", "language": "fr", "max_sections": 60}),
+                json!({"title": "Ada Lovelace", "max_sections": 60}),
             ),
             (
                 &[
@@ -617,7 +578,7 @@ Options:
                     "8000",
                 ],
                 SECTION,
-                json!({"title": "Ada Lovelace", "section_index": "1", "language": "en", "max_chars": 8000}),
+                json!({"title": "Ada Lovelace", "section_index": "1", "max_chars": 8000}),
             ),
             (
                 &[
@@ -628,12 +589,12 @@ Options:
                     "T-1",
                 ],
                 SECTION,
-                json!({"title": "Ada Lovelace", "section_index": "T-1", "language": "en", "max_chars": 3000}),
+                json!({"title": "Ada Lovelace", "section_index": "T-1", "max_chars": 3000}),
             ),
             (
                 &["links", "--title", "Ada Lovelace"],
                 LINKS,
-                json!({"title": "Ada Lovelace", "language": "en", "limit": 20}),
+                json!({"title": "Ada Lovelace", "limit": 20}),
             ),
             (
                 &[
@@ -646,7 +607,7 @@ Options:
                     "eyJ2IjoxfQ",
                 ],
                 LINKS,
-                json!({"title": "Ada Lovelace", "language": "en", "limit": 2, "cursor": "eyJ2IjoxfQ"}),
+                json!({"title": "Ada Lovelace", "limit": 2, "cursor": "eyJ2IjoxfQ"}),
             ),
         ];
         for (words, capability, input) in cases {

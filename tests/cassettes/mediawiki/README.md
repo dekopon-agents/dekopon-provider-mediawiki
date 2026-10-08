@@ -1,0 +1,1 @@
+This cassette v1 fixture is synthetic, authored from `tests/fixtures/search-page-1.json` and the existing exact-GET scripted test. It is not a traffic recording. It contains public article sample data and no credentials, cookies, account identifiers, or household data. The request path excludes the configured prefix; replay asserts the complete joined URI.

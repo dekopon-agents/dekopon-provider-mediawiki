@@ -5,7 +5,6 @@ use serde_json::Value;
 
 use crate::error;
 
-pub(crate) const DEFAULT_LANGUAGE: &str = "en";
 pub(crate) const MAX_TITLE_BYTES: usize = 255;
 pub(crate) const MAX_CURSOR_BYTES: usize = 2 * 1024;
 
@@ -22,370 +21,12 @@ pub(crate) const MAX_SECTION_CHARS: usize = 8_000;
 pub(crate) const DEFAULT_LINK_LIMIT: usize = 20;
 pub(crate) const MAX_LINK_LIMIT: usize = 20;
 
-/// Active, public Wikipedia edition host labels from Wikimedia SiteMatrix on 2026-08-22.
-/// Source: `meta.wikimedia.org/w/api.php?action=sitematrix&format=json&formatversion=2`.
-/// Closed, private, fishbowl, and special-project entries were excluded during authoring.
-pub(crate) const ACTIVE_WIKIPEDIA_LANGUAGES: &[&str] = &[
-    "ab",
-    "ace",
-    "ady",
-    "af",
-    "als",
-    "alt",
-    "am",
-    "ami",
-    "an",
-    "ang",
-    "ann",
-    "anp",
-    "ar",
-    "arc",
-    "ary",
-    "arz",
-    "as",
-    "ast",
-    "atj",
-    "av",
-    "avk",
-    "awa",
-    "ay",
-    "az",
-    "azb",
-    "ba",
-    "ban",
-    "bar",
-    "bat-smg",
-    "bbc",
-    "bcl",
-    "bdr",
-    "be",
-    "be-tarask",
-    "bew",
-    "bg",
-    "bh",
-    "bi",
-    "bjn",
-    "blk",
-    "bm",
-    "bn",
-    "bo",
-    "bol",
-    "bpy",
-    "br",
-    "bs",
-    "btm",
-    "bug",
-    "bxr",
-    "ca",
-    "cbk-zam",
-    "cdo",
-    "ce",
-    "ceb",
-    "ch",
-    "chr",
-    "chy",
-    "ckb",
-    "co",
-    "crh",
-    "cs",
-    "csb",
-    "cu",
-    "cv",
-    "cy",
-    "da",
-    "dag",
-    "de",
-    "dga",
-    "din",
-    "diq",
-    "dsb",
-    "dtp",
-    "dty",
-    "dv",
-    "dz",
-    "ee",
-    "el",
-    "eml",
-    "en",
-    "eo",
-    "es",
-    "et",
-    "eu",
-    "ext",
-    "fa",
-    "fat",
-    "ff",
-    "fi",
-    "fiu-vro",
-    "fj",
-    "fo",
-    "fon",
-    "fr",
-    "frp",
-    "frr",
-    "fur",
-    "fy",
-    "ga",
-    "gag",
-    "gan",
-    "gcr",
-    "gd",
-    "gl",
-    "glk",
-    "gn",
-    "gom",
-    "gor",
-    "got",
-    "gpe",
-    "gu",
-    "guc",
-    "gur",
-    "guw",
-    "gv",
-    "ha",
-    "hak",
-    "haw",
-    "he",
-    "hi",
-    "hif",
-    "hr",
-    "hsb",
-    "ht",
-    "hu",
-    "hy",
-    "hyw",
-    "ia",
-    "iba",
-    "id",
-    "ie",
-    "ig",
-    "igl",
-    "ik",
-    "ilo",
-    "inh",
-    "io",
-    "is",
-    "isv",
-    "it",
-    "iu",
-    "ja",
-    "jam",
-    "jbo",
-    "jv",
-    "ka",
-    "kaa",
-    "kab",
-    "kai",
-    "kaj",
-    "kbd",
-    "kbp",
-    "kcg",
-    "kg",
-    "kge",
-    "ki",
-    "kk",
-    "km",
-    "kn",
-    "knc",
-    "ko",
-    "koi",
-    "krc",
-    "ks",
-    "ksh",
-    "ku",
-    "kus",
-    "kv",
-    "kw",
-    "ky",
-    "la",
-    "lad",
-    "lb",
-    "lbe",
-    "lez",
-    "lfn",
-    "lg",
-    "li",
-    "lij",
-    "lld",
-    "lmo",
-    "ln",
-    "lo",
-    "lt",
-    "ltg",
-    "lv",
-    "mad",
-    "mag",
-    "mai",
-    "map-bms",
-    "mdf",
-    "mg",
-    "mhr",
-    "mi",
-    "min",
-    "mk",
-    "ml",
-    "mn",
-    "mni",
-    "mnw",
-    "mos",
-    "mr",
-    "mrj",
-    "ms",
-    "mt",
-    "mwl",
-    "my",
-    "myv",
-    "mzn",
-    "nah",
-    "nap",
-    "nds",
-    "nds-nl",
-    "ne",
-    "new",
-    "nia",
-    "nl",
-    "nn",
-    "no",
-    "nov",
-    "nqo",
-    "nr",
-    "nrm",
-    "nso",
-    "nup",
-    "nv",
-    "ny",
-    "oc",
-    "olo",
-    "om",
-    "or",
-    "os",
-    "pa",
-    "pag",
-    "pam",
-    "pap",
-    "pcd",
-    "pcm",
-    "pdc",
-    "pfl",
-    "pi",
-    "pl",
-    "pms",
-    "pnb",
-    "pnt",
-    "ppl",
-    "ps",
-    "pt",
-    "pwn",
-    "qu",
-    "rki",
-    "rm",
-    "rmy",
-    "rn",
-    "ro",
-    "roa-rup",
-    "roa-tara",
-    "rsk",
-    "ru",
-    "rue",
-    "rw",
-    "sa",
-    "sah",
-    "sat",
-    "sc",
-    "scn",
-    "sco",
-    "sd",
-    "se",
-    "sg",
-    "sh",
-    "shi",
-    "shn",
-    "si",
-    "simple",
-    "sk",
-    "skr",
-    "sl",
-    "sm",
-    "smn",
-    "sn",
-    "so",
-    "sq",
-    "sr",
-    "srn",
-    "ss",
-    "st",
-    "stq",
-    "su",
-    "sv",
-    "sw",
-    "syl",
-    "szl",
-    "szy",
-    "ta",
-    "tay",
-    "tcy",
-    "tdd",
-    "te",
-    "tet",
-    "tg",
-    "th",
-    "ti",
-    "tig",
-    "tk",
-    "tl",
-    "tly",
-    "tn",
-    "to",
-    "tok",
-    "tpi",
-    "tr",
-    "trv",
-    "ts",
-    "tt",
-    "tum",
-    "tw",
-    "ty",
-    "tyv",
-    "udm",
-    "ug",
-    "uk",
-    "ur",
-    "uz",
-    "ve",
-    "vec",
-    "vep",
-    "vi",
-    "vls",
-    "vo",
-    "wa",
-    "war",
-    "wo",
-    "wuu",
-    "xal",
-    "xh",
-    "xmf",
-    "yi",
-    "yo",
-    "za",
-    "zea",
-    "zgh",
-    "zh",
-    "zh-classical",
-    "zh-min-nan",
-    "zh-yue",
-    "zu",
-];
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SearchInput {
     /// Search phrase: 1–256 non-control characters; insource: is forbidden, with no raw query passthrough.
     #[schemars(length(min = 1, max = 256))]
     pub(crate) query: String,
-    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
-    #[serde(default = "default_language")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
-    pub(crate) language: String,
     /// Maximum candidates from one API page.
     #[serde(default = "default_search_limit")]
     #[schemars(range(min = 1, max = 10))]
@@ -402,10 +43,6 @@ pub struct PageInput {
     /// Exact title from `wikipedia search`; Wikipedia resolves redirects only on its own origin.
     #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
-    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
-    #[serde(default = "default_language")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
-    pub(crate) language: String,
     /// Maximum Unicode characters in the compact lead.
     #[serde(default = "default_page_chars")]
     #[schemars(range(min = 1, max = 1200))]
@@ -418,10 +55,6 @@ pub struct OutlineInput {
     /// Canonical or redirecting Wikipedia title from search or page.
     #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
-    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
-    #[serde(default = "default_language")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
-    pub(crate) language: String,
     /// Maximum sections; continuation is never drained automatically.
     #[serde(default = "default_outline_sections")]
     #[schemars(range(min = 1, max = 60))]
@@ -437,10 +70,6 @@ pub struct SectionInput {
     /// Copy the index exactly from `wikipedia outline`; headings are not selectors.
     #[schemars(length(min = 1, max = 32))]
     pub(crate) section_index: String,
-    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
-    #[serde(default = "default_language")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
-    pub(crate) language: String,
     /// Maximum Unicode characters in the selected section plaintext.
     #[serde(default = "default_section_chars")]
     #[schemars(range(min = 1, max = 8000))]
@@ -453,10 +82,6 @@ pub struct LinksInput {
     /// Canonical or redirecting title of the page whose article links are listed.
     #[schemars(length(min = 1, max = 255))]
     pub(crate) title: String,
-    /// Checked-in active Wikipedia edition code (for example en, de, fr, simple); defaults to en.
-    #[serde(default = "default_language")]
-    #[schemars(regex(pattern = "^[a-z][a-z0-9-]{0,15}$"), length(max = 16))]
-    pub(crate) language: String,
     /// Maximum main-namespace links returned from one API page.
     #[serde(default = "default_link_limit")]
     #[schemars(range(min = 1, max = 20))]
@@ -469,7 +94,6 @@ pub struct LinksInput {
 
 pub(crate) fn parse_search(value: Value) -> Result<SearchInput, ProviderError> {
     let input: SearchInput = decode(value)?;
-    validate_language(&input.language)?;
     validate_query(&input.query)?;
     validate_limit(input.limit, MAX_SEARCH_LIMIT)?;
     validate_cursor_shape(input.cursor.as_deref())?;
@@ -478,7 +102,6 @@ pub(crate) fn parse_search(value: Value) -> Result<SearchInput, ProviderError> {
 
 pub(crate) fn parse_page(value: Value) -> Result<PageInput, ProviderError> {
     let input: PageInput = decode(value)?;
-    validate_language(&input.language)?;
     validate_title(&input.title)?;
     validate_limit(input.max_chars, MAX_PAGE_CHARS)?;
     Ok(input)
@@ -486,7 +109,6 @@ pub(crate) fn parse_page(value: Value) -> Result<PageInput, ProviderError> {
 
 pub(crate) fn parse_outline(value: Value) -> Result<OutlineInput, ProviderError> {
     let input: OutlineInput = decode(value)?;
-    validate_language(&input.language)?;
     validate_title(&input.title)?;
     validate_limit(input.max_sections, MAX_OUTLINE_SECTIONS)?;
     Ok(input)
@@ -494,7 +116,6 @@ pub(crate) fn parse_outline(value: Value) -> Result<OutlineInput, ProviderError>
 
 pub(crate) fn parse_section(value: Value) -> Result<SectionInput, ProviderError> {
     let input: SectionInput = decode(value)?;
-    validate_language(&input.language)?;
     validate_title(&input.title)?;
     validate_section_index(&input.section_index)?;
     validate_limit(input.max_chars, MAX_SECTION_CHARS)?;
@@ -503,7 +124,6 @@ pub(crate) fn parse_section(value: Value) -> Result<SectionInput, ProviderError>
 
 pub(crate) fn parse_links(value: Value) -> Result<LinksInput, ProviderError> {
     let input: LinksInput = decode(value)?;
-    validate_language(&input.language)?;
     validate_title(&input.title)?;
     validate_limit(input.limit, MAX_LINK_LIMIT)?;
     validate_cursor_shape(input.cursor.as_deref())?;
@@ -512,13 +132,6 @@ pub(crate) fn parse_links(value: Value) -> Result<LinksInput, ProviderError> {
 
 fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ProviderError> {
     serde_json::from_value(value).map_err(|_| error::invalid_input())
-}
-
-pub(crate) fn validate_language(language: &str) -> Result<(), ProviderError> {
-    if ACTIVE_WIKIPEDIA_LANGUAGES.binary_search(&language).is_err() {
-        return Err(error::invalid_language());
-    }
-    Ok(())
 }
 
 pub(crate) fn validate_query(query: &str) -> Result<(), ProviderError> {
@@ -578,10 +191,6 @@ fn validate_cursor_shape(cursor: Option<&str>) -> Result<(), ProviderError> {
     Ok(())
 }
 
-fn default_language() -> String {
-    DEFAULT_LANGUAGE.to_owned()
-}
-
 fn default_search_limit() -> usize {
     DEFAULT_SEARCH_LIMIT
 }
@@ -606,26 +215,10 @@ fn default_link_limit() -> usize {
 mod tests {
     use serde_json::json;
 
-    use super::{
-        ACTIVE_WIKIPEDIA_LANGUAGES, parse_links, parse_outline, parse_page, parse_search,
-        parse_section,
-    };
+    use super::{parse_links, parse_outline, parse_page, parse_search, parse_section};
 
     #[test]
-    fn language_snapshot_is_sorted_unique_and_defaults_to_english() {
-        assert_eq!(ACTIVE_WIKIPEDIA_LANGUAGES.len(), 348);
-        assert!(
-            ACTIVE_WIKIPEDIA_LANGUAGES
-                .windows(2)
-                .all(|pair| pair[0] < pair[1])
-        );
-        let input = parse_search(json!({"query": "Ada Lovelace"})).expect("valid input");
-        assert_eq!(input.language, "en");
-        assert_eq!(input.limit, 5);
-    }
-
-    #[test]
-    fn strict_objects_and_language_allowlist_fail_before_http() {
+    fn strict_objects_fail_before_http() {
         for input in [
             json!({"query": "Ada", "extra": true}),
             json!({"query": "Ada", "language": "EN"}),

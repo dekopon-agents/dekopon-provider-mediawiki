@@ -1,3 +1,4 @@
+use dekopon_provider_sdk::provider::endpoint::Base;
 use std::collections::HashSet;
 
 use crate::error::ProviderError;
@@ -28,16 +29,17 @@ pub(crate) type Send<'a> = &'a mut dyn FnMut(Request) -> Result<Response, HttpEr
 
 pub(crate) fn search(
     input: SearchInput,
+    base: &Base,
     send: Send<'_>,
 ) -> Result<serde_json::Value, ProviderError> {
     let (continuation, depth, had_cursor) = decode_cursor(
         input.cursor.as_deref(),
         ToolKind::Search,
-        &input.language,
+        base.as_str(),
         &input.query,
         input.limit,
     )?;
-    let mut request = ApiRequest::new(&input.language, "query");
+    let mut request = ApiRequest::new(base, "query");
     request
         .pair("list", "search")
         .pair("srnamespace", "0")
@@ -82,7 +84,7 @@ pub(crate) fn search(
     let next_page = cursor::encode_next(
         response.continuation,
         ToolKind::Search,
-        &input.language,
+        base.as_str(),
         &input.query,
         input.limit,
         depth,
@@ -97,8 +99,12 @@ pub(crate) fn search(
     budget::finish(&output)
 }
 
-pub(crate) fn page(input: PageInput, send: Send<'_>) -> Result<serde_json::Value, ProviderError> {
-    let mut request = ApiRequest::new(&input.language, "query");
+pub(crate) fn page(
+    input: PageInput,
+    base: &Base,
+    send: Send<'_>,
+) -> Result<serde_json::Value, ProviderError> {
+    let mut request = ApiRequest::new(base, "query");
     request
         .pair("prop", "extracts|description|info|pageprops")
         .pair("redirects", "1")
@@ -150,7 +156,7 @@ pub(crate) fn page(input: PageInput, send: Send<'_>) -> Result<serde_json::Value
     truncated |= redirects_truncated;
     let wikidata_id = validate_wikidata(page.pageprops.wikibase_item)?;
     let is_disambiguation = page.pageprops.disambiguation.is_some();
-    let url = page_url(&input.language, &title, None);
+    let url = page_url(base, &title, None)?;
     let mut output = PageOutput {
         requested_title: input.title,
         title,
@@ -170,9 +176,10 @@ pub(crate) fn page(input: PageInput, send: Send<'_>) -> Result<serde_json::Value
 
 pub(crate) fn outline(
     input: OutlineInput,
+    base: &Base,
     send: Send<'_>,
 ) -> Result<serde_json::Value, ProviderError> {
-    let parsed = fetch_outline(send, &input.language, &input.title)?;
+    let parsed = fetch_outline(send, base, &input.title)?;
     let mut truncated = parsed.sections.len() > input.max_sections;
     let mut sections = Vec::with_capacity(parsed.sections.len().min(input.max_sections));
     for section in parsed.sections.into_iter().take(input.max_sections) {
@@ -196,9 +203,10 @@ pub(crate) fn outline(
 
 pub(crate) fn section(
     input: SectionInput,
+    base: &Base,
     send: Send<'_>,
 ) -> Result<serde_json::Value, ProviderError> {
-    let outline = fetch_outline(send, &input.language, &input.title)?;
+    let outline = fetch_outline(send, base, &input.title)?;
     let selected = outline
         .sections
         .into_iter()
@@ -207,7 +215,7 @@ pub(crate) fn section(
     let (heading, heading_truncated) = decode_heading(&selected.line, Operation::Section)?;
     validate_anchor(&selected.anchor, Operation::Section)?;
 
-    let mut request = ApiRequest::new(&input.language, "parse");
+    let mut request = ApiRequest::new(base, "parse");
     request
         .pair("oldid", outline.revision_id.to_string())
         .pair("section", &input.section_index)
@@ -230,7 +238,7 @@ pub(crate) fn section(
     let (text, text_truncated) =
         budget::truncate_text(&text, input.max_chars, input.max_chars.saturating_mul(4));
     let truncated = heading_truncated || rendered.truncated || text_truncated;
-    let url = page_url(&input.language, &outline.title, Some(&selected.anchor));
+    let url = page_url(base, &outline.title, Some(&selected.anchor))?;
     let mut output = SectionOutput {
         title: outline.title,
         page_id: outline.page_id,
@@ -245,15 +253,19 @@ pub(crate) fn section(
     budget::finish(&output)
 }
 
-pub(crate) fn links(input: LinksInput, send: Send<'_>) -> Result<serde_json::Value, ProviderError> {
+pub(crate) fn links(
+    input: LinksInput,
+    base: &Base,
+    send: Send<'_>,
+) -> Result<serde_json::Value, ProviderError> {
     let (continuation, depth, had_cursor) = decode_cursor(
         input.cursor.as_deref(),
         ToolKind::Links,
-        &input.language,
+        base.as_str(),
         &input.title,
         input.limit,
     )?;
-    let mut request = ApiRequest::new(&input.language, "query");
+    let mut request = ApiRequest::new(base, "query");
     request
         .pair("prop", "links")
         .pair("plnamespace", "0")
@@ -289,7 +301,7 @@ pub(crate) fn links(input: LinksInput, send: Send<'_>) -> Result<serde_json::Val
     let next_page = cursor::encode_next(
         response.continuation,
         ToolKind::Links,
-        &input.language,
+        base.as_str(),
         &input.title,
         input.limit,
         depth,
@@ -305,12 +317,12 @@ pub(crate) fn links(input: LinksInput, send: Send<'_>) -> Result<serde_json::Val
 
 fn fetch_outline(
     send: Send<'_>,
-    language: &str,
+    base: &Base,
     requested_title: &str,
 ) -> Result<ResolvedOutline, ProviderError> {
     // Resolve namespace and revision before parsing. This keeps outline/section inside the same
     // main-namespace boundary as search, page, and links and pins the following parse call.
-    let mut resolve = ApiRequest::new(language, "query");
+    let mut resolve = ApiRequest::new(base, "query");
     resolve
         .pair("prop", "info")
         .pair("redirects", "1")
@@ -328,7 +340,7 @@ fn fetch_outline(
     let revision_id = positive(page.lastrevid, Operation::Outline)?;
     let title = upstream_title(page.title, Operation::Outline)?;
 
-    let mut parse = ApiRequest::new(language, "parse");
+    let mut parse = ApiRequest::new(base, "parse");
     parse
         .pair("oldid", revision_id.to_string())
         .pair("prop", "sections|revid");
@@ -350,13 +362,13 @@ fn fetch_outline(
 fn decode_cursor(
     encoded: Option<&str>,
     tool: ToolKind,
-    language: &str,
+    base: &str,
     subject: &str,
     limit: usize,
 ) -> Result<(Option<Continuation>, u8, bool), ProviderError> {
     match encoded {
         Some(encoded) => {
-            let state = cursor::decode(encoded, tool, language, subject, limit)?;
+            let state = cursor::decode(encoded, tool, base, subject, limit)?;
             Ok((Some(state.continuation), state.depth, true))
         }
         None => Ok((None, 0, false)),
@@ -382,14 +394,14 @@ fn append_continuation(request: &mut ApiRequest, continuation: Option<&Continuat
 }
 
 struct ApiRequest {
-    language: String,
+    base: Base,
     parameters: Vec<(String, String)>,
 }
 
 impl ApiRequest {
-    fn new(language: &str, action: &str) -> Self {
+    fn new(base: &Base, action: &str) -> Self {
         Self {
-            language: language.to_owned(),
+            base: base.clone(),
             parameters: vec![
                 ("action".to_owned(), action.to_owned()),
                 ("format".to_owned(), "json".to_owned()),
@@ -406,17 +418,15 @@ impl ApiRequest {
     }
 
     fn finish(self) -> Result<Request, ProviderError> {
-        // Defense in depth: this is already validated before construction.
-        input::validate_language(&self.language)?;
         let mut serializer = form_urlencoded::Serializer::new(String::new());
         for (name, value) in self.parameters {
             serializer.append_pair(&name, &value);
         }
         let query = serializer.finish();
-        let uri = format!(
-            "https://{}.wikipedia.org/w/api.php?{}",
-            self.language, query
-        );
+        let uri = self
+            .base
+            .join(&format!("/w/api.php?{query}"))
+            .map_err(|_| error::invalid_request())?;
         Ok(Request::new(method::GET, uri)
             .map_err(|_| error::invalid_request())?
             .with_header(
@@ -593,17 +603,19 @@ fn valid_section_index(index: &str) -> bool {
             .any(|character| character.is_control() || character.is_whitespace())
 }
 
-fn page_url(language: &str, title: &str, anchor: Option<&str>) -> String {
+fn page_url(base: &Base, title: &str, anchor: Option<&str>) -> Result<String, ProviderError> {
     let title = title.replace(' ', "_");
-    let mut url = format!(
-        "https://{language}.wikipedia.org/wiki/{}",
-        percent_encode_component(&title)
-    );
+    let mut url = base
+        .join(&format!(
+            "/w/index.php?title={}",
+            percent_encode_component(&title)
+        ))
+        .map_err(|_| error::invalid_request())?;
     if let Some(anchor) = anchor {
         url.push('#');
         url.push_str(&percent_encode_component(anchor));
     }
-    url
+    Ok(url)
 }
 
 fn percent_encode_component(value: &str) -> String {
@@ -988,9 +1000,9 @@ mod tests {
     fn search_uses_exact_encoded_get_and_projects_a_cursor() {
         let output = invoke_with(
             &capability("wikipedia_search"),
-            json!({"query": "Ada & café", "language": "en", "limit": 2}),
+            json!({"query": "Ada & café", "limit": 2}),
             |request| {
-                assert_standard_request(&request, "en");
+                assert_standard_request(&request);
                 assert_eq!(
                     request.uri,
                     "https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&errorformat=plaintext&maxlag=5&list=search&srnamespace=0&srprop=snippet%7Cwordcount%7Ctimestamp&srlimit=2&srsearch=Ada+%26+caf%C3%A9"
@@ -1007,7 +1019,7 @@ mod tests {
         let cursor = output["next_cursor"].as_str().expect("cursor").to_owned();
         let second = invoke_with(
             &capability("wikipedia_search"),
-            json!({"query": "Ada & café", "language": "en", "limit": 2, "cursor": cursor}),
+            json!({"query": "Ada & café", "limit": 2, "cursor": cursor}),
             |request| {
                 assert!(request.uri.contains("continue=-%7C%7C"));
                 assert!(request.uri.contains("sroffset=2"));
@@ -1048,7 +1060,10 @@ mod tests {
         .expect("redirecting page succeeds");
         assert_eq!(output["requested_title"], "NYC");
         assert_eq!(output["title"], "New York City");
-        assert_eq!(output["url"], "https://en.wikipedia.org/wiki/New_York_City");
+        assert_eq!(
+            output["url"],
+            "https://en.wikipedia.org/w/index.php?title=New_York_City"
+        );
         assert_eq!(
             output["redirects"][0],
             json!({"from": "NYC", "to": "New York City"})
@@ -1174,7 +1189,7 @@ mod tests {
             &capability("wikipedia_section"),
             json!({"title": "Ada Lovelace", "section_index": "1", "max_chars": 500}),
             |request| {
-                assert_standard_request(&request, "en");
+                assert_standard_request(&request);
                 call += 1;
                 match call {
                     1 => {
@@ -1209,6 +1224,38 @@ mod tests {
         );
         assert!(output["text"].as_str().expect("text").contains("Childhood"));
         assert_eq!(output["revision_id"], 1370153024_u64);
+    }
+
+    #[test]
+    fn prefixed_section_preserves_requests_and_content_fragment() {
+        let base = dekopon_provider_sdk::provider::endpoint::Base::parse(
+            "https://fixture.example.test/prefix/",
+        )
+        .unwrap();
+        let input = crate::input::parse_section(json!({"title":"Ada & café", "section_index":"1"}))
+            .unwrap();
+        let mut calls = 0;
+        let output = super::section(input, &base, &mut |request| {
+            calls += 1;
+            let (query, name) = match calls {
+                1 => ("action=query&format=json&formatversion=2&errorformat=plaintext&maxlag=5&prop=info&redirects=1&converttitles=1&titles=Ada+%26+caf%C3%A9", "outline-resolve"),
+                2 => ("action=parse&format=json&formatversion=2&errorformat=plaintext&maxlag=5&oldid=1370153024&prop=sections%7Crevid", "outline"),
+                3 => ("action=parse&format=json&formatversion=2&errorformat=plaintext&maxlag=5&oldid=1370153024&section=1&prop=text%7Crevid", "section"),
+                _ => panic!("unexpected request"),
+            };
+            assert_eq!(request.uri, format!("https://fixture.example.test/prefix/w/api.php?{query}"));
+            assert_eq!(request.method, "GET");
+            response(fixture(name))
+        }).unwrap();
+        assert_eq!(calls, 3);
+        assert_eq!(
+            output["url"],
+            "https://fixture.example.test/prefix/w/index.php?title=Ada_Lovelace#Biography"
+        );
+        assert_eq!(
+            super::page_url(&base, "Café & tea?", Some("A & B")).unwrap(),
+            "https://fixture.example.test/prefix/w/index.php?title=Caf%C3%A9_%26_tea%3F#A%20%26%20B"
+        );
     }
 
     #[test]
@@ -1281,7 +1328,7 @@ mod tests {
             cursor = crate::cursor::encode_next(
                 Some(continuation.clone()),
                 ToolKind::Search,
-                "en",
+                "https://en.wikipedia.org",
                 "Ada & café",
                 2,
                 depth,
@@ -1293,7 +1340,6 @@ mod tests {
             &capability("wikipedia_search"),
             json!({
                 "query": "Ada & café",
-                "language": "en",
                 "limit": 2,
                 "cursor": cursor.expect("depth-ten cursor")
             }),
@@ -1384,13 +1430,13 @@ mod tests {
         assert_eq!(oversized.code(), "response_too_large");
     }
 
-    fn assert_standard_request(request: &Request, language: &str) {
+    fn assert_standard_request(request: &Request) {
         assert_eq!(request.method, "GET");
         assert!(request.body.is_empty());
         assert!(
             request
                 .uri
-                .starts_with(&format!("https://{language}.wikipedia.org/w/api.php?"))
+                .starts_with("https://en.wikipedia.org/w/api.php?")
         );
         assert!(!request.uri.contains('@'));
         assert!(request.headers.iter().any(|header| {
