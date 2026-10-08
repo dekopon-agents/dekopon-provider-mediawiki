@@ -1,9 +1,31 @@
 //! Five narrow, bounded Wikipedia capabilities through the `wikipedia` shell word.
 //! HTTP authority remains broker-owned; results go only to stdout.
 
-use dekopon_provider_sdk::provider::{Capability, Http, Proposal, Provider, Stdout, Usage};
+use dekopon_provider_sdk::provider::endpoint::Base;
+use dekopon_provider_sdk::provider::{
+    Capability, Http, Proposal, Provider, Settings, Stdout, Usage,
+};
 use dekopon_provider_sdk::{EffectKind, RiskLevel};
 use std::io::Write;
+
+const DEFAULT_BASE: Base = Base::from_static("https://en.wikipedia.org");
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaWikiSettings {
+    #[serde(default = "default_base")]
+    base_url: Base,
+}
+
+fn default_base() -> Base {
+    DEFAULT_BASE
+}
+
+impl MediaWikiSettings {
+    fn base(self) -> Base {
+        self.base_url
+    }
+}
 
 mod api;
 mod budget;
@@ -29,11 +51,11 @@ where
 {
     let send = &mut send;
     match capability.as_str() {
-        "mediawiki.search" => api::search(input::parse_search(input)?, send),
-        "mediawiki.page" => api::page(input::parse_page(input)?, send),
-        "mediawiki.outline" => api::outline(input::parse_outline(input)?, send),
-        "mediawiki.section" => api::section(input::parse_section(input)?, send),
-        "mediawiki.links" => api::links(input::parse_links(input)?, send),
+        "mediawiki.search" => api::search(input::parse_search(input)?, &DEFAULT_BASE, send),
+        "mediawiki.page" => api::page(input::parse_page(input)?, &DEFAULT_BASE, send),
+        "mediawiki.outline" => api::outline(input::parse_outline(input)?, &DEFAULT_BASE, send),
+        "mediawiki.section" => api::section(input::parse_section(input)?, &DEFAULT_BASE, send),
+        "mediawiki.links" => api::links(input::parse_links(input)?, &DEFAULT_BASE, send),
         _ => Err(error::unknown_capability()),
     }
 }
@@ -77,14 +99,19 @@ macro_rules! capability {
             const EFFECT: EffectKind = EffectKind::ReadOnly;
             const RISK: RiskLevel = RiskLevel::Low;
             type Input = $input;
-            type Needs = Http;
+            type Needs = (Settings<MediaWikiSettings>, Http);
             type Error = error::ProviderError;
 
-            fn run(input: Self::Input, http: Http, out: &mut Stdout) -> Result<(), Self::Error> {
+            fn run(
+                input: Self::Input,
+                (settings, http): Self::Needs,
+                out: &mut Stdout,
+            ) -> Result<(), Self::Error> {
                 // Validate direct calls and proposals identically before any HTTP request.
                 let input = serde_json::to_value(input).map_err(|_| error::invalid_input())?;
                 let input = $parse(input)?;
-                let output = $run(input, &mut |request| http.send(request))?;
+                let base = settings.into_inner().base();
+                let output = $run(input, &base, &mut |request| http.send(request))?;
                 let bytes = serde_json::to_vec(&output).map_err(|_| error::upstream_error())?;
                 out.write_all(&bytes).map_err(|_| error::output_closed())?;
                 out.write_all(b"\n").map_err(|_| error::output_closed())?;

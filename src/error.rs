@@ -31,7 +31,6 @@ impl Failure for ProviderError {
         // The old guest used snake_case errors. The typed SDK's codes are kebab-case.
         match self.code {
             "invalid_input" => Code::INVALID_INPUT,
-            "invalid_language" => Code::new("invalid-language"),
             "invalid_query" => Code::new("invalid-query"),
             "invalid_cursor" => Code::new("invalid-cursor"),
             "invalid_title" => Code::new("invalid-title"),
@@ -65,13 +64,6 @@ pub(crate) fn invalid_input() -> ProviderError {
     ProviderError::new(
         "invalid_input",
         "input does not match the closed capability contract; correct the fields and bounds",
-    )
-}
-
-pub(crate) fn invalid_language() -> ProviderError {
-    ProviderError::new(
-        "invalid_language",
-        "language must be a checked-in active Wikipedia edition code such as en or de",
     )
 }
 
@@ -222,10 +214,10 @@ mod tests {
     use dekopon_provider_sdk::provider::{HttpError, HttpErrorCode};
 
     use super::{
-        Operation, api, invalid_cursor, invalid_input, invalid_language, invalid_query,
-        invalid_request, invalid_section_index, invalid_title, maxlag, no_such_section, not_found,
-        parse_failed, rate_limited, response_too_large, status, timeout, transport,
-        unknown_capability, upstream_error,
+        Operation, api, invalid_cursor, invalid_input, invalid_query, invalid_request,
+        invalid_section_index, invalid_title, maxlag, no_such_section, not_found, parse_failed,
+        rate_limited, response_too_large, status, timeout, transport, unknown_capability,
+        upstream_error,
     };
 
     /// A model reaches this provider only through `wikipedia <verb>`, and a bare capability id is
@@ -234,7 +226,6 @@ mod tests {
     fn no_message_names_a_capability_id() {
         for error in [
             invalid_input(),
-            invalid_language(),
             invalid_query(),
             invalid_cursor(),
             invalid_title(),

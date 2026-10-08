@@ -54,7 +54,7 @@ pub(crate) struct NextPage {
 pub(crate) fn decode(
     encoded: &str,
     tool: ToolKind,
-    language: &str,
+    base: &str,
     subject: &str,
     limit: usize,
 ) -> Result<CursorState, ProviderError> {
@@ -73,7 +73,7 @@ pub(crate) fn decode(
     if envelope.version != CURSOR_VERSION
         || envelope.tool != tool
         || !(1..=MAX_CURSOR_DEPTH).contains(&envelope.depth)
-        || envelope.fingerprint != fingerprint(tool, language, subject, limit)
+        || envelope.fingerprint != fingerprint(tool, base, subject, limit)
         || validate_continuation(&envelope.continuation, tool).is_err()
     {
         return Err(error::invalid_cursor());
@@ -88,7 +88,7 @@ pub(crate) fn decode(
 pub(crate) fn encode_next(
     continuation: Option<Continuation>,
     tool: ToolKind,
-    language: &str,
+    base: &str,
     subject: &str,
     limit: usize,
     current_depth: u8,
@@ -109,7 +109,7 @@ pub(crate) fn encode_next(
     let envelope = Envelope {
         version: CURSOR_VERSION,
         tool,
-        fingerprint: fingerprint(tool, language, subject, limit),
+        fingerprint: fingerprint(tool, base, subject, limit),
         depth: current_depth + 1,
         continuation,
     };
@@ -163,7 +163,7 @@ fn validate_continuation(continuation: &Continuation, tool: ToolKind) -> Result<
     Ok(())
 }
 
-fn fingerprint(tool: ToolKind, language: &str, subject: &str, limit: usize) -> String {
+fn fingerprint(tool: ToolKind, base: &str, subject: &str, limit: usize) -> String {
     let tool = match tool {
         ToolKind::Search => "search",
         ToolKind::Links => "links",
@@ -172,7 +172,7 @@ fn fingerprint(tool: ToolKind, language: &str, subject: &str, limit: usize) -> S
     for value in [
         "dekopon-mediawiki-cursor-v1",
         tool,
-        language,
+        base,
         subject,
         &limit.to_string(),
     ] {
@@ -202,7 +202,7 @@ mod tests {
         let encoded = encode_next(
             Some(search_continuation()),
             ToolKind::Search,
-            "en",
+            "https://en.wikipedia.org",
             "Ada Lovelace",
             5,
             0,
@@ -210,18 +210,39 @@ mod tests {
         .expect("encodes")
         .cursor
         .expect("cursor exists");
-        let decoded = decode(&encoded, ToolKind::Search, "en", "Ada Lovelace", 5)
-            .expect("matching request decodes");
+        let decoded = decode(
+            &encoded,
+            ToolKind::Search,
+            "https://en.wikipedia.org",
+            "Ada Lovelace",
+            5,
+        )
+        .expect("matching request decodes");
         assert_eq!(decoded.depth, 1);
         assert_eq!(decoded.continuation.sroffset, Some(5));
 
-        for (tool, language, subject, limit) in [
-            (ToolKind::Links, "en", "Ada Lovelace", 5),
-            (ToolKind::Search, "de", "Ada Lovelace", 5),
-            (ToolKind::Search, "en", "Ada Byron", 5),
-            (ToolKind::Search, "en", "Ada Lovelace", 6),
+        for (tool, base, subject, limit) in [
+            (
+                ToolKind::Links,
+                "https://en.wikipedia.org",
+                "Ada Lovelace",
+                5,
+            ),
+            (
+                ToolKind::Search,
+                "https://de.wikipedia.org",
+                "Ada Lovelace",
+                5,
+            ),
+            (ToolKind::Search, "https://en.wikipedia.org", "Ada Byron", 5),
+            (
+                ToolKind::Search,
+                "https://en.wikipedia.org",
+                "Ada Lovelace",
+                6,
+            ),
         ] {
-            assert!(decode(&encoded, tool, language, subject, limit).is_err());
+            assert!(decode(&encoded, tool, base, subject, limit).is_err());
         }
     }
 
@@ -230,7 +251,7 @@ mod tests {
         let encoded = encode_next(
             Some(search_continuation()),
             ToolKind::Search,
-            "en",
+            "https://en.wikipedia.org",
             "Ada",
             5,
             0,
@@ -242,14 +263,33 @@ mod tests {
         let mut value: Value = serde_json::from_slice(&bytes).expect("JSON");
         value["continuation"]["unexpected"] = Value::String("x".to_owned());
         let tampered = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&value).expect("JSON"));
-        assert!(decode(&tampered, ToolKind::Search, "en", "Ada", 5).is_err());
+        assert!(
+            decode(
+                &tampered,
+                ToolKind::Search,
+                "https://en.wikipedia.org",
+                "Ada",
+                5
+            )
+            .is_err()
+        );
 
         let invalid_links = Continuation {
             plcontinue: Some("974|0|Next".to_owned()),
             sroffset: Some(5),
             ..Continuation::default()
         };
-        assert!(encode_next(Some(invalid_links), ToolKind::Links, "en", "Ada", 5, 0).is_err());
+        assert!(
+            encode_next(
+                Some(invalid_links),
+                ToolKind::Links,
+                "https://en.wikipedia.org",
+                "Ada",
+                5,
+                0
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -257,7 +297,7 @@ mod tests {
         let next = encode_next(
             Some(search_continuation()),
             ToolKind::Search,
-            "en",
+            "https://en.wikipedia.org",
             "Ada",
             5,
             MAX_CURSOR_DEPTH,
@@ -266,8 +306,15 @@ mod tests {
         assert!(next.cursor.is_none());
         assert!(next.pagination_capped);
 
-        let exhausted = encode_next(None, ToolKind::Search, "en", "Ada", 5, 0)
-            .expect("natural exhaustion succeeds");
+        let exhausted = encode_next(
+            None,
+            ToolKind::Search,
+            "https://en.wikipedia.org",
+            "Ada",
+            5,
+            0,
+        )
+        .expect("natural exhaustion succeeds");
         assert!(exhausted.cursor.is_none());
         assert!(!exhausted.pagination_capped);
     }

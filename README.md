@@ -18,7 +18,7 @@ Inputs and outputs are bounded in native code, not only JSON Schema. Search retu
 
 Pagination performs one API page per invocation and never drains continuation automatically. Opaque cursors are request-bound, at most 2 KiB, and stop after ten continuation depths. `pagination_capped: true` with `next_cursor: null` means Wikipedia still advertised another page but the provider depth cap stopped traversal; `false` with a null cursor means natural exhaustion. Cursors are deliberately **not** claimed to be authenticated or expiring: the current guest ABI supplies no host key or clock.
 
-The component makes zero automatic retries. It returns compact actionable errors such as `invalid-language`, `invalid-cursor`, `not-found`, `no-such-section`, `rate-limited`, `maxlag`, `timeout`, and `response-too-large` without response bodies or transport details.
+The component makes zero automatic retries. It returns compact actionable errors such as `invalid-cursor`, `not-found`, `no-such-section`, `rate-limited`, `maxlag`, `timeout`, and `response-too-large` without response bodies or transport details.
 
 ## The `wikipedia` command word
 
@@ -75,7 +75,7 @@ wikipedia links --title "Ada Lovelace"
 wikipedia links --title "Ada Lovelace" --cursor LINK_CURSOR
 ```
 
-Keep the query or title, `--language`, and `--limit` identical when passing `next_cursor` to the next call. `--language` defaults to `en` and is checked against a dated, checked-in list of active Wikipedia editions.
+Keep the query or title, `--limit`, and owner-configured base identical when passing `next_cursor` to the next call. Cursors are bound to that base; obtain a new cursor after changing wikis.
 
 Each verb's page:
 
@@ -89,7 +89,6 @@ Arguments:
   <QUERY>...  What to look for; several words are joined with single spaces
 
 Options:
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --limit <N>        Most titles to return, 1 to 10 [default: 5]
       --cursor <CURSOR>  The next_cursor of the previous identical search, unchanged
   -h, --help             Print help
@@ -100,10 +99,9 @@ Read one page's compact lead, by an exact title from search
 Usage: wikipedia page [OPTIONS] --title <TITLE>
 
 Options:
-      --title <TITLE>    The exact title, as search returned it
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
-      --max-chars <N>    Most characters of lead text, 1 to 1200 [default: 900]
-  -h, --help             Print help
+      --title <TITLE>  The exact title, as search returned it
+      --max-chars <N>  Most characters of lead text, 1 to 1200 [default: 900]
+  -h, --help           Print help
 
 $ wikipedia outline --help
 List one page's sections, each with an index for section
@@ -112,7 +110,6 @@ Usage: wikipedia outline [OPTIONS] --title <TITLE>
 
 Options:
       --title <TITLE>     The page's title, from search or page
-      --language <CODE>   Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --max-sections <N>  Most sections to list, 1 to 60 [default: 30]
   -h, --help              Print help
 
@@ -124,7 +121,6 @@ Usage: wikipedia section [OPTIONS] --title <TITLE> --section-index <INDEX>
 Options:
       --title <TITLE>          The title outline was run with
       --section-index <INDEX>  One sections[].index from outline, copied unchanged
-      --language <CODE>        Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --max-chars <N>          Most characters of section text, 1 to 8000 [default: 3000]
   -h, --help                   Print help
 
@@ -135,7 +131,6 @@ Usage: wikipedia links [OPTIONS] --title <TITLE>
 
 Options:
       --title <TITLE>    The page whose article links to list
-      --language <CODE>  Wikipedia edition: en, de, fr, simple, or another active language code [default: en]
       --limit <N>        Most links to return, 1 to 20 [default: 20]
       --cursor <CURSOR>  The next_cursor of the previous identical links call, unchanged
   -h, --help             Print help
@@ -145,7 +140,19 @@ Options:
 
 The component grants nothing by itself. Install `mediawiki-provider.wasm` in an owner-controlled provider directory loaded by `dekopon-brokerd`. Once releases exist, the same bytes will be available as the release asset and as an OCI layer at `ghcr.io/dekopon-agents/provider-mediawiki:<version>`, with `mediawiki-provider.wasm.sha256` alongside the release asset.
 
-Broker authority must list each enabled language host exactly—never `*.wikipedia.org`—and permit HTTPS/443 GET only. A representative English-only fragment is:
+The owner setting `providerSettings.mediawiki.baseUrl` selects one wiki/language at a time and defaults to `https://en.wikipedia.org`. Set it to `https://fr.wikipedia.org` to select French. Per-call `language` inputs and `--language` flags are removed without aliases. No model-facing input controls the API origin.
+
+```yaml
+providerSettings:
+  mediawiki:
+    baseUrl: https://fr.wikipedia.org
+```
+
+The SDK validates the base before any request: it must be an HTTP(S) URL without userinfo, query, or fragment. Settings use camelCase and reject unknown keys. Every API request appends `/w/api.php` with the existing form-encoded query. A base such as `https://wiki.example.test/prefix` therefore routes to `/prefix/w/api.php`, not `/{language}/w/api.php`.
+
+Returned page and section links append `/w/index.php?title=…` (and a section fragment) to the same base, retaining its prefix. This uses MediaWiki's script URL instead of assuming a pretty-URL layout; the selected wiki or proxy must serve `w/index.php` alongside `w/api.php`. The provider does not discover custom script paths or remap links to another host. Content links remain output data and are never fetched.
+
+The broker remains the destination-policy boundary. Its `allowedHosts` must name the selected host exactly—never `*.wikipedia.org`—and permit HTTPS/443 GET only for public Wikipedia. Setting `baseUrl` grants no destination, plaintext-loopback, or credential authority. A representative English-only fragment is:
 
 ```yaml
 providers:
@@ -206,7 +213,7 @@ constraintSets:
         allowPlaintextLoopback: false
 ```
 
-Add `de.wikipedia.org` (or another checked-in edition) explicitly to every capability that may use it. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools. Constraint sets and Cedar stay per capability: `wikipedia section …` authorizes as `mediawiki.section`.
+When changing the base, have the owner update the exact broker host grant for every affected capability. Do not configure credentials: the guest never sets `authorization`, and Wikipedia reads are public. Add ordinary deny-by-default Cedar permits for only the principals and capability actions that should use these tools. Constraint sets and Cedar stay per capability: `wikipedia section …` authorizes as `mediawiki.section`.
 
 HTTP imports are linked only by the broker. Nothing else links them, so the component is inert outside a broker that supplies `dekopon:http/client`.
 
@@ -218,15 +225,17 @@ The release toolchain and encoder are exact pins:
 rustup toolchain install 1.98.1 --profile minimal --component clippy --component rustfmt
 rustup target add wasm32-unknown-unknown --toolchain 1.98.1
 rustup run 1.98.1 cargo install wasm-tools --version 1.259.0 --locked
-cargo test --locked --package dekopon-mediawiki-provider
 WASM_TOOLS_VERSION=1.259.0 ../provider-workflows/build.sh
+DEKOPON_PROVIDER_COMPONENT="$PWD/mediawiki-provider.wasm" cargo test --locked --workspace
 ```
 
 The shared [`dekopon-agents/provider-workflows`](https://github.com/dekopon-agents/provider-workflows) repository owns `build.sh` (checked out next to this repository) with the proven deterministic metadata normalization, source/Cargo/sysroot path remapping, and path scan; it uses the checkout's ordinary `target/` and never redirects Cargo to a shared build directory. The shared `ci / validate` gate runs formatting, clippy, `cargo deny`, and reproducibility from two independent checkouts; the shared release workflow builds, attests, and publishes on a `v*` tag.
 
+The synthetic cassette `tests/cassettes/mediawiki/0001-GET-w-api-search.json` is authored from the existing `search-page-1.json` scripted response, not captured traffic. Its native replay asserts the exact prefixed URI and headers; real-component tests verify settings delivery and broker HTTP enforcement.
+
 ## Manual broker smoke checklist
 
-After installing the built component under a constrained `dekopon-brokerd`, verify English and German search; `Ada Lovelace`; redirects through `NYC`; disambiguation through `Mercury`; a deliberately missing title; outline → copied section index; and two links pages using the returned cursor. Record actual evidence in [`AUTHORING.md`](AUTHORING.md); none is claimed before it is run.
+After installing the built component under a constrained `dekopon-brokerd`, verify English and German search in separate owner configurations; `Ada Lovelace`; redirects through `NYC`; disambiguation through `Mercury`; a deliberately missing title; outline → copied section index; and two links pages using the returned cursor. Record actual evidence in [`AUTHORING.md`](AUTHORING.md); none is claimed before it is run.
 
 ## Design notes
 

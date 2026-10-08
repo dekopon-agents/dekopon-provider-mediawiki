@@ -5,9 +5,9 @@ This document extracts provider-design lessons from the MediaWiki implementation
 ## Decisions that mattered
 
 - **Start from authority, not an API client.** Five read-only capabilities form a guided path: search → compact lead → outline → one section → links. There is no generic URL/API/wikitext escape hatch and no sixth convenience tool.
-- **Use the current component contract.** The migrated provider uses the typed SDK, imports `dekopon:stdio/streams@0.1.0` and `dekopon:http/client@1.1.0` (no asset or WASI import), and exports through `export!`; the `wikipedia` word proposes a typed input before authorization. HTTP providers must be exercised through `dekopon-brokerd`; the import-free direct runner is intentionally the wrong host.
-- **Treat schemas as prompt metadata, not enforcement.** Every request is separately deserialized with `deny_unknown_fields`, then checked for semantic, scalar-count, UTF-8-byte, and allowlist bounds before the first host call.
-- **Make destination choice non-input.** A reviewed SiteMatrix snapshot supplies language labels. The implementation constructs HTTPS/443 Wikipedia Action API origins and accepts no URL, host, scheme, port, project, IP, credential, environment variable, or runtime configuration.
+- **Use the current component contract.** The migrated provider uses the typed SDK, imports `dekopon:stdio/streams@0.1.0`, `dekopon:http/client@1.1.0`, and `dekopon:settings/config@0.1.0` (no asset or WASI import), and exports through `export!`; the `wikipedia` word proposes a typed input before authorization. HTTP providers must be exercised through `dekopon-brokerd`; the import-free direct runner is intentionally the wrong host.
+- **Treat schemas as prompt metadata, not enforcement.** Every request is separately deserialized with `deny_unknown_fields`, then checked for semantic, scalar-count, and UTF-8-byte bounds before the first host call.
+- **Make destination choice non-input.** The owner selects one wiki with `providerSettings.mediawiki.baseUrl` (English Wikipedia by default). SDK `Base` validates this boundary and appends `/w/api.php` while preserving a configured prefix. Model inputs cannot choose a language or origin; the broker remains responsible for destination and credential policy.
 - **Pin page identity and namespace before parsing.** `mediawiki.outline` first resolves a main-namespace page and revision with `action=query`, then parses sections by `oldid`. `mediawiki.section` adds one final `oldid`/index fetch. The two- and three-call sequences prevent namespace bypass and revision races.
 - **Budget serialized data, not characters alone.** Four-byte Unicode and JSON escaping make character limits insufficient. Field caps feed a 14,000-byte projected-JSON check before writing to stdout.
 
@@ -33,7 +33,7 @@ The numbered lessons below record the original authoring epoch; the current type
 
 ## Testing and shipping setup
 
-Native tests inject a scripted `FnMut(Request)` and assert call order, fixed authority, form encoding, constant headers, absent authorization, response projection, pagination, and failures. Fixtures cover empty/paginated search, redirect/disambiguation/missing pages, outline and revision-pinned sections, links continuation, and hostile HTML. Live network checks are intentionally broker-level manual smoke tests.
+Native tests inject a scripted `FnMut(Request)` and assert call order, owner-configured authority, form encoding, constant headers, absent authorization, response projection, pagination, and failures. Fixtures cover empty/paginated search, redirect/disambiguation/missing pages, outline and revision-pinned sections, links continuation, and hostile HTML. Live network checks are intentionally broker-level manual smoke tests.
 
 The repeatable local command sequence is:
 

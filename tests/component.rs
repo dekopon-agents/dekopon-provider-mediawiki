@@ -31,13 +31,12 @@ fn real_component_conforms_to_typed_manifest_and_stdio() {
         assert_eq!(capability.risk, RiskLevel::Low);
         assert_eq!(capability.input_schema["additionalProperties"], false);
         let properties = &capability.input_schema["properties"];
-        assert!(
-            properties["language"]["description"]
-                .as_str()
-                .is_some_and(|text| text.contains("Checked-in active Wikipedia edition")),
-            "{id}: language allowlist guidance: {:?}",
-            properties["language"]
-        );
+        for key in ["language", "baseUrl", "base_url", "endpoint", "url"] {
+            assert!(
+                properties.get(key).is_none(),
+                "{id}: {key} is owner-controlled"
+            );
+        }
         if matches!(id, "mediawiki.search" | "mediawiki.links") {
             assert!(
                 properties["cursor"]["description"]
@@ -210,5 +209,50 @@ fn real_component_refuses_ephemeral_fixture_for_fixed_https_authority() {
             );
         }
         Err(other) => panic!("unexpected fixture failure: {other}"),
+    }
+}
+
+#[test]
+fn real_component_uses_owner_settings_for_scripted_http() {
+    let harness = Harness::<MediaWiki>::get(component()).http(HttpScript::new(
+        "localhost",
+        "GET",
+        Response {
+            status: 200,
+            headers: vec![],
+            body: include_bytes!("fixtures/search-page-1.json").to_vec(),
+        },
+    ));
+    let origin = harness.origin().expect("fixture origin").to_owned();
+    let output = harness
+        .settings(json!({"baseUrl": format!("{origin}/prefix/")}))
+        .call("mediawiki.search", json!({"query":"Ada & café", "limit":2}))
+        .expect("authorized fixture call");
+    assert_eq!(output.status, 0, "{}", output.stderr);
+    assert_eq!(output.http_calls.len(), 1);
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["results"][0]["title"], "Ada Lovelace");
+}
+
+#[test]
+fn real_component_rejects_malformed_settings_without_http() {
+    for settings in [
+        json!({"baseUrl":"https://localhost?x=1"}),
+        json!({"baseUrl":"https://user@localhost"}),
+        json!({"baseUrl":"https://localhost#fragment"}),
+        json!({"baseUrl":"ftp://localhost"}),
+        json!({"baseUrl":"localhost"}),
+        json!({"baseUrl":42}),
+        json!({"baseUrl":null}),
+        json!({"baseUrl":"https://localhost", "unknown":true}),
+    ] {
+        let output = Harness::<MediaWiki>::get(component())
+            .settings(settings)
+            .call("mediawiki.search", json!({"query":"Ada"}))
+            .expect("settings failure is rendered");
+        assert_ne!(output.status, 0);
+        assert!(output.stderr.contains("settings"), "{}", output.stderr);
+        assert!(output.stdout.is_empty());
+        assert!(output.http_calls.is_empty());
     }
 }
