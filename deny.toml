@@ -8,6 +8,8 @@ all-features = false
 [advisories]
 ignore = [
   { id = "RUSTSEC-2024-0449", reason = "unmaintained, not a vulnerability: unsafe-libyaml 0.2.11 reaches the graph only through dekopon-core's serde_yaml_ng 0.10; removable with dekopon#542" },
+  { id = "RUSTSEC-2026-0592", reason = "stack overflow in Url::origin() on nested blob: URLs, fixed in url 2.5.9; url 2.5.8 reaches the graph only through reqwest <- dekopon-http-host <- dekopon-provider-sdk-testkit (dev-dependency only) and the shipped wasm32 graph does not contain it; it cannot be locked forward because Cargo.toml pins form_urlencoded =1.2.2, which url 2.5.9 needs at 1.2.3; removable when that pin moves" },
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained, not a vulnerability: chrono 0.4.45 reaches the graph only through cedar-policy-core 4.13.0 (dekopon-broker dev-dependency); removable when cedar-policy-core drops it" },
 ]
 
 [licenses]
